@@ -1,0 +1,9 @@
+{
+  "onebot_url": "ws://127.0.0.1:3001",
+  "onebot_host": "127.0.0.1",
+  "onebot_port": 3001,
+  "settings_port": 8787,
+  "login_ui_port": 6099,
+  "bind": "127.0.0.1",
+  "notes": "never bind 0.0.0.0"
+}

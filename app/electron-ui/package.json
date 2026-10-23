@@ -1,0 +1,105 @@
+{
+  "name": "fatfish-electron-ui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "肥鱼 Windows 客户端 — Electron 桌面壳",
+  "author": "FatFish",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "smoke": "node scripts/smoke-main.js",
+    "dist": "npm run ensure-crlf && electron-builder --win nsis",
+    "pack": "npm run ensure-crlf && electron-builder --dir",
+    "ensure-crlf": "node ../../scripts/ensure-crlf-node.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "build": {
+    "appId": "com.fatfish.client",
+    "productName": "肥鱼",
+    "copyright": "Copyright © FatFish",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "persona-lib.js",
+      "preload.js",
+      "service-manager.js",
+      "login-api.js",
+      "renderer/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "extraResources": [
+      {
+        "from": "../bridge",
+        "to": "bridge",
+        "filter": [
+          "**/*",
+          "!**/node_modules/.cache/**"
+        ]
+      },
+      {
+        "from": "../shell",
+        "to": "shell",
+        "filter": [
+          "local-server.mjs",
+          "package.json"
+        ]
+      },
+      {
+        "from": "../web",
+        "to": "web",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "../../vendor/napcat",
+        "to": "vendor/napcat",
+        "filter": [
+          "**/*",
+          "!**/*.map"
+        ]
+      },
+      {
+        "from": "../../vendor/node",
+        "to": "vendor/node",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "FatFish-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "肥鱼",
+      "uninstallDisplayName": "肥鱼"
+    }
+  },
+  "devDependencies": {
+    "electron": "33.4.11",
+    "electron-builder": "25.1.8"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  }
+}

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>肥鱼 — 设置</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 36rem; margin: 2rem auto; padding: 0 1rem; }
+    input[type=password], input[type=text] { width: 100%; padding: .5rem; box-sizing: border-box; }
+    .hint { color: #555; font-size: .9rem; }
+    .ok { color: #0a7; }
+    .err { color: #c22; }
+  </style>
+</head>
+<body>
+  <h1>设置</h1>
+  <p class="hint">API Key 仅保存在本机。请勿发给任何人。</p>
+  <label>DeepSeek API Key<br />
+    <input type="password" id="key" autocomplete="off" placeholder="sk-…" />
+  </label>
+  <p style="margin-top:1rem">
+    <button id="save">保存到本机</button>
+  </p>
+  <p id="msg" class="hint"></p>
+  <p class="hint"><a href="risk.html">返回风险告知</a></p>
+  <script>
+    const API = "http://127.0.0.1:8787/api/save-key";
+    const msg = document.getElementById("msg");
+    document.getElementById("save").onclick = async () => {
+      const v = document.getElementById("key").value.trim();
+      if (!v) { msg.className = "err"; msg.textContent = "请先粘贴 Key"; return; }
+      msg.className = "hint"; msg.textContent = "保存中…";
+      try {
+        const res = await fetch(API, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: v }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.ok) {
+          msg.className = "ok";
+          msg.textContent = "已保存到本机（内容不会回显）。";
+          document.getElementById("key").value = "";
+        } else {
+          msg.className = "err";
+          msg.textContent = "保存失败。请确认已从托盘「启动」本机服务。";
+        }
+      } catch (e) {
+        msg.className = "err";
+        msg.textContent = "无法连接本机设置服务。请先启动肥鱼。";
+      }
+    };
+  </script>
+</body>
+</html>

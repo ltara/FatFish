@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self';" />
+  <title>肥鱼</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="shell-root">
+    <header class="titlebar" id="titlebar">
+      <div class="titlebar-brand">
+        <span class="titlebar-dot" aria-hidden="true"></span>
+        <span>肥鱼</span>
+      </div>
+      <div class="titlebar-controls">
+        <button type="button" class="titlebar-btn" id="btn-win-min" title="最小化" aria-label="最小化">
+          <svg viewBox="0 0 10 10"><rect y="5" width="10" height="1"/></svg>
+        </button>
+        <button type="button" class="titlebar-btn" id="btn-win-max" title="最大化" aria-label="最大化">
+          <svg viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" fill="none" stroke="currentColor" stroke-width="1"/></svg>
+        </button>
+        <button type="button" class="titlebar-btn close" id="btn-win-close" title="关闭" aria-label="关闭">
+          <svg viewBox="0 0 10 10"><path d="M1 1 L9 9 M9 1 L1 9" stroke="currentColor" stroke-width="1.2"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <div id="splash" class="splash" aria-hidden="false">
+      <div class="splash-inner">
+        <span class="splash-mark" aria-hidden="true"></span>
+        <p class="splash-title">肥鱼</p>
+        <p class="splash-sub">Windows 本地客户端</p>
+      </div>
+    </div>
+
+    <!-- S2 风险勾选 -->
+    <div id="risk-mask" class="onboard hidden" role="dialog" aria-modal="true">
+      <div class="onboard-card">
+        <h1>风险告知</h1>
+        <p>使用本客户端登录 QQ 存在账号安全与封号等风险。请仅使用<strong>专用小号</strong>，并自行保管 API Key。</p>
+        <p>本软件为 Windows 本地客户端：Key 与对话数据默认保存在您的电脑，不提供云端代管。</p>
+        <label class="check-row">
+          <input type="checkbox" id="risk-ok" />
+          <span>我已阅读并自愿承担上述风险</span>
+        </label>
+        <button type="button" id="risk-go" class="btn-primary" disabled style="width:100%">继续</button>
+      </div>
+    </div>
+
+    <!-- S3 扫码 + S4 手机验证 -->
+    <div id="login-flow" class="onboard hidden" role="dialog" aria-modal="true">
+      <div class="onboard-card" id="login-card">
+        <div class="login-brand">
+          <span class="login-mark" aria-hidden="true"></span>
+          <h1>登录 QQ</h1>
+        </div>
+        <p id="login-lead" class="lead">请使用手机 QQ 扫描下方二维码</p>
+
+        <div id="login-waiting-svc" class="login-state hidden">
+          <div class="login-spinner" aria-hidden="true"></div>
+          <p id="login-waiting-msg" class="hint">正在启动本机服务，请稍候…</p>
+        </div>
+
+        <div id="login-qr-wrap" class="login-qr-wrap hidden">
+          <div class="qr-frame">
+            <img id="login-qr-img" alt="登录二维码" width="260" height="260" />
+            <div id="login-qr-overlay" class="qr-overlay hidden">
+              <p id="login-qr-overlay-text"></p>
+            </div>
+          </div>
+          <p id="login-phase-msg" class="login-phase-msg">请使用手机 QQ 扫描二维码</p>
+          <div class="btn-row login-actions">
+            <button type="button" id="btn-refresh-qr" class="btn-secondary">刷新二维码</button>
+          </div>
+        </div>
+
+        <div id="login-verify" class="login-state verify-card hidden">
+          <p class="verify-title">请在手机上完成验证</p>
+          <p class="hint">打开手机 QQ，按提示完成验证或确认后，回到本页等待即可。</p>
+        </div>
+
+        <div id="login-success" class="login-state success-card hidden">
+          <p class="success-title">登录成功</p>
+          <p id="login-success-who" class="hint"></p>
+          <p id="login-success-next" class="hint"></p>
+          <div class="btn-row login-actions">
+            <button type="button" id="btn-login-continue" class="btn-primary">继续</button>
+          </div>
+        </div>
+
+        <div id="login-error" class="login-state error-card hidden">
+          <p id="login-error-msg" class="hint err">登录遇到问题</p>
+          <div class="btn-row login-actions">
+            <button type="button" id="btn-retry-login" class="btn-primary">重试</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- S5 首次 Key + 人设 -->
+    <div id="first-setup" class="onboard hidden" role="dialog" aria-modal="true">
+      <div class="onboard-card">
+        <h1>完成首次设置</h1>
+        <p>填写 DeepSeek API Key 后即可使用智能回复。人设可稍后修改。</p>
+        <label class="field">
+          <span class="field-label">DeepSeek API Key</span>
+          <input type="password" id="first-api-key" autocomplete="off" placeholder="sk-…" />
+        </label>
+        <label class="field">
+          <span class="field-label">人设（可选，将写入人设库）</span>
+          <textarea id="first-persona" rows="4" placeholder="用简体中文描述助手风格…"></textarea>
+        </label>
+        <div class="btn-row" style="justify-content:space-between">
+          <button type="button" id="btn-first-skip" class="btn-ghost">稍后设置</button>
+          <button type="button" id="btn-first-save" class="btn-primary">保存并进入</button>
+        </div>
+        <p id="first-setup-msg" class="hint"></p>
+      </div>
+    </div>
+
+    <!-- 主壳：首页 / 人设 / 设置 -->
+    <div class="app" id="main-app">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span class="brand-text">肥鱼</span>
+        </div>
+        <nav>
+          <button type="button" class="nav-btn active" data-page="home">首页</button>
+          <button type="button" class="nav-btn" data-page="persona">人设</button>
+          <button type="button" class="nav-btn" data-page="settings">设置</button>
+        </nav>
+        <p class="sidebar-foot">Windows 本地客户端</p>
+      </aside>
+
+      <main class="content">
+        <section id="page-home" class="page active">
+          <header class="page-head">
+            <h2>首页</h2>
+            <p class="page-sub">本机服务由客户端自动启停，数据不出本机。</p>
+          </header>
+
+          <div class="capsules" id="home-capsules">
+            <div class="capsule" id="cap-qq"><span class="dot"></span><span>QQ <strong id="cap-qq-text">检测中…</strong></span></div>
+            <div class="capsule" id="cap-svc"><span class="dot"></span><span>本机服务 <strong id="cap-svc-text">检测中…</strong></span></div>
+            <div class="capsule" id="cap-reply"><span class="dot"></span><span>智能回复 <strong id="cap-reply-text">检测中…</strong></span></div>
+          </div>
+
+          <div class="card status-card">
+            <ul class="status-list">
+              <li>
+                <span class="label">QQ 账号</span>
+                <span id="st-qq" class="badge">未登录</span>
+              </li>
+              <li>
+                <span class="label">API Key</span>
+                <span id="st-key" class="badge">检测中…</span>
+              </li>
+              <li>
+                <span class="label">本机服务</span>
+                <span id="st-svc" class="badge">检测中…</span>
+              </li>
+              <li>
+                <span class="label">登录服务</span>
+                <span id="st-login" class="badge">检测中…</span>
+              </li>
+              <li>
+                <span class="label">智能回复</span>
+                <span id="st-reply" class="badge">检测中…</span>
+              </li>
+              <li>
+                <span class="label">出站回复</span>
+                <span id="st-outbound" class="badge">检测中…</span>
+              </li>
+              <li>
+                <span class="label">当前人设</span>
+                <span id="st-persona" class="badge info">检测中…</span>
+              </li>
+            </ul>
+          </div>
+
+          <div class="card form-card outbound-card">
+            <label class="check-row outbound-toggle">
+              <input type="checkbox" id="outbound-paused" />
+              <span>暂停出站回复（暂停后收到私聊不会自动回复）</span>
+            </label>
+          </div>
+
+          <p id="st-hint" class="hint"></p>
+          <div class="btn-row">
+            <button type="button" id="btn-refresh" class="btn-secondary">刷新状态</button>
+            <button type="button" id="btn-restart" class="btn-ghost">重新启动本机服务</button>
+            <button type="button" id="btn-relogin" class="btn-ghost">重新登录 QQ</button>
+          </div>
+        </section>
+
+        <section id="page-persona" class="page">
+          <header class="page-head">
+            <h2>人设库</h2>
+            <p class="page-sub">查看、添加、修改并一键应用。全部保存在本机，不联网。</p>
+          </header>
+
+          <div class="persona-current card form-card">
+            <div class="persona-current-row">
+              <div>
+                <div class="persona-current-label">当前</div>
+                <div id="persona-current-name" class="persona-current-name">—</div>
+              </div>
+              <div class="btn-row">
+                <button type="button" id="btn-persona-new" class="btn-primary">新建</button>
+                <button type="button" id="btn-persona-import" class="btn-secondary">从素材导入</button>
+              </div>
+            </div>
+            <p class="hint" style="margin:8px 0 0">应用后下一句私聊起按新人设回复（对话记忆会重置）。</p>
+          </div>
+
+          <div id="persona-list-view">
+            <div id="persona-list" class="persona-list"></div>
+            <p id="persona-msg" class="hint"></p>
+          </div>
+
+          <div id="persona-editor" class="card form-card persona-editor hidden">
+            <div class="persona-editor-head">
+              <button type="button" id="btn-persona-back" class="btn-ghost">← 返回列表</button>
+              <span id="persona-editor-title" class="persona-editor-title">编辑人设</span>
+            </div>
+            <input type="hidden" id="persona-edit-id" value="" />
+            <label class="field">
+              <span class="field-label">名称</span>
+              <input type="text" id="persona-edit-title" maxlength="40" placeholder="例如：大肥鱼风" />
+            </label>
+            <label class="field">
+              <span class="field-label">一句话</span>
+              <input type="text" id="persona-edit-summary" maxlength="60" placeholder="列表上显示的简介（可留空自动截取）" />
+            </label>
+            <label class="field">
+              <span class="field-label">正文</span>
+              <textarea id="persona-edit-body" rows="10" placeholder="用简体中文描述助手风格与边界…"></textarea>
+            </label>
+            <div class="btn-row">
+              <button type="button" id="btn-persona-save" class="btn-primary">保存</button>
+              <button type="button" id="btn-persona-apply" class="btn-secondary">应用</button>
+              <button type="button" id="btn-persona-delete" class="btn-ghost danger-text">删除</button>
+            </div>
+            <p id="persona-editor-msg" class="hint"></p>
+          </div>
+
+          <div id="persona-import-panel" class="card form-card hidden">
+            <div class="persona-editor-head">
+              <button type="button" id="btn-import-cancel" class="btn-ghost">← 取消</button>
+              <span class="persona-editor-title">从素材导入</span>
+            </div>
+            <label class="field">
+              <span class="field-label">粘贴素材文本</span>
+              <textarea id="persona-import-text" rows="12" placeholder="把人设素材整段粘贴到这里。导入后进入编辑草稿，不会自动应用。"></textarea>
+            </label>
+            <div class="btn-row">
+              <button type="button" id="btn-import-go" class="btn-primary">进入编辑草稿</button>
+            </div>
+            <p class="hint">不会联网拉取；仅本地粘贴。</p>
+          </div>
+        </section>
+
+        <section id="page-settings" class="page">
+          <header class="page-head">
+            <h2>设置</h2>
+            <p class="page-sub">DeepSeek API Key 仅保存在本机。保存后不会回显完整内容。</p>
+          </header>
+
+          <div class="card form-card">
+            <label class="field">
+              <span class="field-label">DeepSeek API Key</span>
+              <input type="password" id="api-key" autocomplete="off" placeholder="sk-…" />
+            </label>
+            <p id="key-mask-hint" class="hint" style="margin-top:-8px"></p>
+            <div class="btn-row">
+              <button type="button" id="btn-save-key" class="btn-primary">保存到本机</button>
+            </div>
+            <p id="settings-msg" class="hint"></p>
+          </div>
+
+          <div class="card form-card" id="agent-engine-card">
+            <label class="check-row outbound-toggle">
+              <input type="checkbox" id="agent-engine-enabled" />
+              <span>启用本机助手引擎（试验）</span>
+            </label>
+            <p id="agent-engine-hint" class="hint">默认关闭。开启后私聊可走本机侧载引擎（零工具）；失败自动回退现有回复。主安装包不含引擎，需自行侧载。</p>
+            <p id="agent-engine-msg" class="hint"></p>
+          </div>
+
+          <div class="about-block">
+            <p class="about-name">肥鱼</p>
+            <p id="about-version" class="hint">版本 …</p>
+            <p class="about-price">¥99</p>
+            <p id="about-agent-engine" class="hint hidden"></p>
+            <p class="hint">Windows 本地客户端。数据保存在本机，不提供云端代管。</p>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

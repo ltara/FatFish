@@ -1,0 +1,10 @@
+{
+  "name": "fatfish-shell",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Tray + local settings server (PowerShell tray + node local-server.mjs)",
+  "scripts": {
+    "local-server": "node local-server.mjs"
+  }
+}

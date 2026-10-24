@@ -1,6 +1,6 @@
 /**
  * 肥鱼 renderer — 深色桌面壳
- * 流程：闪屏 → 风险 → 扫码 → 首次 Key+人设 → 主壳（首页/人设/设置）
+ * 流程：闪屏 → 风险 → 扫码 → 首次 Key+人设 → 主壳（首页/人设/功能/设置）
  * 无 webview / 无手输 token / 无上游品牌
  */
 (function () {
@@ -86,78 +86,153 @@
       cap.textContent = "需登录 · Key" + (s.key_saved ? "已配" : "未配");
       return;
     }
-    const reply = s.outbound_paused ? "已暂停" : "回复中";
-    const key = s.key_saved ? "Key已配" : "Key未配";
+    const reply = s.outbound_paused ? "已暂停" : "正在自动回";
+    const key = s.key_saved ? "密钥已配" : "密钥未配";
     const who = s.qq_nick_mask || s.qq_uin_mask || "已登录";
     cap.textContent = "QQ " + who + " · " + reply + " · " + key;
   }
 
-  function updateOnboardingBanner(s) {
-    const ban = $("#onboarding-banner");
-    const text = $("#onboarding-banner-text");
-    const go = $("#onboarding-banner-go");
-    if (!ban || !text || !go) return;
-    if (!s || bootPhase !== "main") {
-      ban.classList.add("hidden");
-      return;
+  function updateHomeFill(s) {
+    updateHomeTodo(s);
+    updateHomeToday(s);
+    updateHomePersonaCard(s);
+    updateHomeAssistBar(s);
+    const pauseBtn = $("#btn-pause-toggle");
+    if (pauseBtn) {
+      // 大钮始终可见；缺登录/密钥时仍可点，状态行会提示
+      pauseBtn.classList.remove("hidden");
     }
-    let msg = "";
-    let action = null;
-    if (!s.key_saved) {
-      msg = "尚未配置模型 API Key，智能回复不可用。";
-      action = "settings";
-      go.textContent = "去设置";
-    } else if (!s.active_persona_title) {
-      msg = "尚未应用人设，建议先选一条或新建。";
-      action = "persona";
-      go.textContent = "去人设";
-    } else {
-      ban.classList.add("hidden");
-      go.onclick = null;
-      return;
-    }
-    text.textContent = msg;
-    ban.classList.remove("hidden");
-    go.onclick = () => {
-      if (action === "settings") showPage("settings");
-      else if (action === "persona") showPage("persona");
-    };
   }
 
-  function updateHomeCta(s) {
-    const wrap = $("#home-cta");
-    const btn = $("#btn-home-cta");
-    const pauseBtn = $("#btn-pause-toggle");
-    if (!wrap || !btn) return;
-    let label = "";
-    let action = null;
-    if (!s) {
-      label = "刷新状态";
-      action = "refresh";
-    } else if (!s.settings_reachable || (!s.login_reachable && s.phase !== "starting")) {
-      label = "重新启动本机服务";
-      action = "restart";
-    } else if (!s.qq_online) {
-      label = "去登录 QQ";
-      action = "login";
-    } else if (!s.key_saved) {
-      label = "去填写 Key";
-      action = "settings";
-    } else {
+  function updateHomeTodo(s) {
+    const wrap = $("#home-todo");
+    const list = $("#home-todo-list");
+    if (!wrap || !list) return;
+    if (!s || bootPhase !== "main") {
       wrap.classList.add("hidden");
-      if (pauseBtn) pauseBtn.classList.remove("hidden");
-      btn.onclick = null;
+      list.innerHTML = "";
+      return;
+    }
+    const items = [];
+    if (!s.qq_online) {
+      items.push({
+        text: "还没登录 QQ",
+        hint: "扫码后才能自动回复",
+        action: "login",
+        label: "去处理",
+      });
+    }
+    if (!s.key_saved) {
+      items.push({
+        text: "还没填模型密钥",
+        hint: "自动回复需要本机密钥",
+        action: "settings",
+        label: "去处理",
+      });
+    }
+    if (!s.active_persona_title) {
+      items.push({
+        text: "还没有人设",
+        hint: "先选一条或新建",
+        action: "persona",
+        label: "去处理",
+      });
+    }
+    if (!items.length) {
+      wrap.classList.add("hidden");
+      list.innerHTML = "";
       return;
     }
     wrap.classList.remove("hidden");
-    btn.textContent = label;
-    if (pauseBtn && action !== null) pauseBtn.classList.add("hidden");
-    btn.onclick = () => {
-      if (action === "refresh") refreshStatus();
-      else if (action === "restart") restartServices();
-      else if (action === "login") prepareLogin();
-      else if (action === "settings") showPage("settings");
-    };
+    list.innerHTML = "";
+    items.forEach((it) => {
+      const row = document.createElement("div");
+      row.className = "todo-card";
+      row.innerHTML =
+        '<span class="todo-mark"></span>' +
+        '<div class="todo-text"></div>' +
+        '<button type="button" class="btn-soft"></button>';
+      const text = row.querySelector(".todo-text");
+      text.appendChild(document.createTextNode(it.text));
+      if (it.hint) {
+        const h = document.createElement("span");
+        h.className = "hint";
+        h.textContent = it.hint;
+        text.appendChild(h);
+      }
+      const btn = row.querySelector("button");
+      btn.textContent = it.label;
+      btn.addEventListener("click", () => {
+        if (it.action === "login") prepareLogin();
+        else if (it.action === "settings") showPage("settings");
+        else if (it.action === "persona") showPage("persona");
+      });
+      list.appendChild(row);
+    });
+  }
+
+  function updateHomeToday(s) {
+    const empty = $("#home-today-empty");
+    const grid = $("#home-today-grid");
+    if (!empty || !grid) return;
+    const act = (s && s.activity) || {};
+    const pausedFor = act.paused_for || "";
+    const hasData = !!(act.has_data || act.dm_today || act.last_reply || pausedFor);
+    if (!hasData) {
+      empty.classList.remove("hidden");
+      grid.classList.add("hidden");
+      return;
+    }
+    empty.classList.add("hidden");
+    grid.classList.remove("hidden");
+    const dm = $("#today-dm");
+    const last = $("#today-last-reply");
+    const paused = $("#today-paused");
+    if (dm) dm.textContent = act.dm_today || "—";
+    if (last) last.textContent = act.last_reply || "—";
+    if (paused) {
+      if (s && s.outbound_paused) paused.textContent = pausedFor || "已暂停";
+      else paused.textContent = "未暂停";
+    }
+  }
+
+  function updateHomePersonaCard(s) {
+    const nameEl = $("#home-persona-card-name");
+    const oneEl = $("#home-persona-card-one");
+    if (nameEl) nameEl.textContent = (s && s.active_persona_title) || "还没有人设";
+    if (oneEl) {
+      oneEl.textContent =
+        (s && s.active_persona_summary) ||
+        ((s && s.active_persona_title) ? "" : "还没有人设，去新建一条吧");
+    }
+  }
+
+  function updateHomeAssistBar(s) {
+    const onoff = $("#home-assist-onoff");
+    const hint = $("#home-assist-hint");
+    const on = !!(s && s.agent_engine_enabled);
+    if (onoff) onoff.textContent = on ? "开" : "关";
+    if (hint) {
+      if (on) {
+        const bits = [];
+        if (s.agent_remember_chat) bits.push("记忆");
+        if (s.agent_use_tools) bits.push("工具");
+        hint.textContent = bits.length
+          ? ("已开 · " + bits.join("、") + " · 点此设置")
+          : "已开 · 点此设置";
+      } else {
+        hint.textContent = "让自动回复更强 · 点此设置";
+      }
+    }
+  }
+
+  function updateOnboardingBanner(s) {
+    // 已由「需要你处理」模块承接
+    void s;
+  }
+
+  function updateHomeCta(s) {
+    updateHomeFill(s);
   }
 
   function syncPauseButton(paused) {
@@ -165,7 +240,7 @@
     const box = $("#outbound-paused");
     if (box && document.activeElement !== box) box.checked = !!paused;
     if (btn) {
-      btn.textContent = paused ? "恢复出站" : "暂停出站";
+      btn.textContent = paused ? "恢复自动回复" : "暂停自动回复";
       btn.classList.toggle("is-paused", !!paused);
     }
   }
@@ -218,7 +293,7 @@
     setStatusChip("chip-key", s.key_saved ? "ok" : "warn", s.key_saved ? "已配" : "未配");
     const keyHint = $("#key-mask-hint");
     if (keyHint) {
-      keyHint.textContent = s.key_saved ? "已保存到本机（不回显）。" : "尚未保存 Key。";
+      keyHint.textContent = s.key_saved ? "已保存到本机（不回显）。" : "尚未保存密钥。";
       keyHint.className = "hint selectable";
     }
 
@@ -263,7 +338,7 @@
     } else if (s.outbound_paused) {
       setStatusChip("chip-reply", "warn", "已暂停");
     } else {
-      setStatusChip("chip-reply", "ok", "回复中");
+      setStatusChip("chip-reply", "ok", "正在自动回");
     }
 
     updateTrayLikeCapsule(s);
@@ -281,13 +356,13 @@
       hint.textContent = "本机设置服务已就绪，登录服务尚未就绪。请确认已安装官方 QQ。";
       hint.className = "hint selectable";
     } else if (!s.key_saved) {
-      hint.textContent = "请到「设置」填写并保存 API Key。";
+      hint.textContent = "请到「设置」填写并保存模型密钥。";
       hint.className = "hint selectable";
     } else if (!s.qq_online) {
       hint.textContent = "可点上方账号行或「重新登录 QQ」扫码。";
       hint.className = "hint selectable";
     } else if (s.outbound_paused) {
-      hint.textContent = "出站已暂停，私聊不会自动回复。";
+      hint.textContent = "自动回复已暂停，私聊不会自动回复。";
       hint.className = "hint selectable";
     } else {
       // 就绪并入仪器行绿点，不再另起绿字
@@ -325,9 +400,12 @@
     if (page) page.classList.add("active");
     if (name === "home") refreshStatus();
     if (name === "persona") loadPersona();
+    if (name === "features") {
+      loadAgentEngine();
+    }
     if (name === "settings") {
       loadAbout();
-      loadAgentEngine();
+      loadAutostart();
       refreshStatus();
     }
   }
@@ -359,7 +437,7 @@
       $("#login-success-who").textContent = who.length ? "当前账号：" + who.join("") : "QQ 已登录";
       const needKey = session.key_saved === false;
       $("#login-success-next").textContent = needKey
-        ? "接下来完成首次设置（API Key），即可开始使用。"
+        ? "接下来完成首次设置（模型密钥），即可开始使用。"
         : "点击继续进入肥鱼。";
       return;
     }
@@ -492,7 +570,7 @@
     }
     const key = ($("#first-api-key").value || "").trim();
     if (!key) {
-      msg.textContent = "请先粘贴 API Key，或点「稍后设置」。";
+      msg.textContent = "请先粘贴模型密钥，或点「稍后设置」。";
       msg.className = "hint err";
       return;
     }
@@ -516,30 +594,59 @@
   }
 
 
+  function syncFeaturesStatus(s) {
+    const text = $("#features-status-text");
+    const dot = $("#features-status-dot");
+    if (!text) return;
+    if (!s) {
+      text.innerHTML = "状态 · <strong>未知</strong>";
+      if (dot) dot.className = "dot warn";
+      return;
+    }
+    if (s.enabled) {
+      if (!s.sidecar) {
+        text.innerHTML = "状态 · <strong>组件未就绪</strong>（已改回普通回复）";
+        if (dot) dot.className = "dot warn";
+      } else {
+        text.innerHTML = "状态 · <strong>正常</strong>（已启用）";
+        if (dot) dot.className = "dot";
+      }
+    } else {
+      text.innerHTML = "状态 · <strong>正常</strong>（未启用）";
+      if (dot) dot.className = "dot";
+    }
+  }
+
   async function loadAgentEngine() {
     const box = $("#agent-engine-enabled");
+    const remember = $("#agent-remember-chat");
+    const tools = $("#agent-use-tools");
     const msg = $("#agent-engine-msg");
-    const about = $("#about-agent-engine");
-    if (!box || !api.getAgentEngine) return;
+    if (!api.getAgentEngine) return;
     try {
       const s = await api.getAgentEngine();
-      box.checked = !!(s && s.enabled);
+      if (box && document.activeElement !== box) box.checked = !!(s && s.enabled);
+      if (remember && document.activeElement !== remember) remember.checked = !!(s && s.remember_chat);
+      if (tools && document.activeElement !== tools) tools.checked = !!(s && s.use_tools);
       if (msg) {
         if (s && s.enabled && !s.sidecar) {
-          msg.textContent = "已开启，但未检测到侧载引擎，将继续走现有回复。";
+          msg.textContent = "已开启，但本机组件还没就绪，仍按普通自动回复。";
           msg.className = "hint warn";
         } else if (s && s.enabled) {
-          msg.textContent = "已开启（侧载可用）。暂停出站时不会调用。";
+          msg.textContent = "已开启。暂停自动回复时助手也会停。";
           msg.className = "hint ok";
         } else {
           msg.textContent = "";
           msg.className = "hint";
         }
       }
-      if (about) {
-        // Show about line whenever the experimental switch exists
-        about.textContent = "本机助手引擎（试验）：" + (s && s.enabled ? "开" : "关") + (s && s.sidecar ? " · 侧载已就绪" : " · 未侧载");
-        about.classList.remove("hidden");
+      syncFeaturesStatus(s);
+      // 刷新首页入口条
+      if (lastStatus) {
+        lastStatus.agent_engine_enabled = !!(s && s.enabled);
+        lastStatus.agent_remember_chat = !!(s && s.remember_chat);
+        lastStatus.agent_use_tools = !!(s && s.use_tools);
+        updateHomeAssistBar(lastStatus);
       }
     } catch (_) {
       /* ignore */
@@ -554,16 +661,17 @@
         if (r && r.ok) {
           msg.textContent = r.enabled
             ? r.sidecar
-              ? "已开启本机助手引擎（试验）。"
-              : "已开启，但未检测到侧载，仍走现有回复。"
-            : "已关闭，私聊走现有回复。";
+              ? "已开启本机助手。"
+              : "已开启，但本机组件还没就绪，仍按普通自动回复。"
+            : "已关闭，私聊按人设普通回复。";
           msg.className = "hint ok";
         } else {
           msg.textContent = "切换失败";
           msg.className = "hint err";
         }
       }
-      loadAgentEngine();
+      await loadAgentEngine();
+      refreshStatus();
     } catch (_) {
       if (msg) {
         msg.textContent = "切换失败";
@@ -572,12 +680,47 @@
     }
   }
 
+  async function setAgentOption(patch) {
+    const msg = $("#agent-engine-msg");
+    try {
+      if (!api.setAgentEngineOptions) return;
+      const r = await api.setAgentEngineOptions(patch);
+      if (msg) {
+        if (r && r.ok) {
+          msg.textContent = "已保存。";
+          msg.className = "hint ok";
+        } else {
+          msg.textContent = "保存失败";
+          msg.className = "hint err";
+        }
+      }
+      await loadAgentEngine();
+      refreshStatus();
+    } catch (_) {
+      if (msg) {
+        msg.textContent = "保存失败";
+        msg.className = "hint err";
+      }
+    }
+  }
+
+  async function loadAutostart() {
+    const box = $("#autostart-enabled");
+    if (!box || !api.getAutostart) return;
+    try {
+      const s = await api.getAutostart();
+      if (document.activeElement !== box) box.checked = !!(s && s.enabled);
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
   async function saveKey() {
     const input = $("#api-key");
     const msg = $("#settings-msg");
     const v = (input.value || "").trim();
     if (!v) {
-      msg.textContent = "请先粘贴 Key";
+      msg.textContent = "请先粘贴密钥";
       msg.className = "hint err";
       return;
     }
@@ -708,6 +851,8 @@
         '<button type="button" class="persona-item-main persona-item-open">' +
         '<p class="persona-item-title"></p>' +
         '<p class="persona-item-summary"></p>' +
+        '<span class="persona-item-meta"></span>' +
+        '<p class="persona-item-preview hidden"></p>' +
         "</button>" +
         '<div class="persona-item-actions">' +
         (it.active ? '<span class="badge ok">使用中</span>' : '<span class="badge">未使用</span>') +
@@ -715,6 +860,26 @@
         "</div>";
       row.querySelector(".persona-item-title").textContent = it.title || "未命名";
       row.querySelector(".persona-item-summary").textContent = it.summary || "";
+      const meta = row.querySelector(".persona-item-meta");
+      if (meta) {
+        if (it.lastAppliedAt) {
+          try {
+            const d = new Date(it.lastAppliedAt);
+            meta.textContent =
+              "上次使用：" +
+              d.toLocaleString("zh-CN", { hour12: false, month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+          } catch (_) {
+            meta.textContent = "";
+          }
+        } else {
+          meta.textContent = "";
+        }
+      }
+      const prev = row.querySelector(".persona-item-preview");
+      if (prev && it.active && it.bodyPreview) {
+        prev.textContent = it.bodyPreview;
+        prev.classList.remove("hidden");
+      }
       row.querySelector(".persona-item-open").addEventListener("click", () => openPersonaEditor(it.id));
       const applyBtn = row.querySelector(".persona-apply-btn");
       applyBtn.textContent = actionLabel;
@@ -1059,6 +1224,123 @@
     const ae = $("#agent-engine-enabled");
     if (ae) {
       ae.addEventListener("change", () => setAgentEngine(!!ae.checked));
+    }
+    const remember = $("#agent-remember-chat");
+    if (remember) {
+      remember.addEventListener("change", () => setAgentOption({ remember_chat: !!remember.checked }));
+    }
+    const tools = $("#agent-use-tools");
+    if (tools) {
+      tools.addEventListener("change", async () => {
+        if (tools.checked) {
+          const ok = window.confirm("开启「使用本机工具」后，助手可能在本机执行操作；危险时会再问你一次。确定开启？");
+          if (!ok) {
+            tools.checked = false;
+            return;
+          }
+        }
+        await setAgentOption({ use_tools: !!tools.checked });
+      });
+    }
+    const assist = $("#home-assist-bar");
+    if (assist) assist.addEventListener("click", () => showPage("features"));
+    const changePersona = $("#btn-home-change-persona");
+    if (changePersona) {
+      changePersona.addEventListener("click", () => {
+        showPage("persona");
+        setTimeout(() => locateActivePersonaInList(), 50);
+      });
+    }
+    const toggleDiag = $("#btn-toggle-diag");
+    if (toggleDiag) {
+      toggleDiag.addEventListener("click", () => {
+        const fold = $("#diag-fold");
+        if (!fold) return;
+        fold.open = !fold.open;
+      });
+    }
+    const auto = $("#autostart-enabled");
+    if (auto) {
+      auto.addEventListener("change", async () => {
+        const msg = $("#settings-data-msg");
+        try {
+          const r = await api.setAutostart(!!auto.checked);
+          if (msg) {
+            msg.textContent = r && r.ok ? (auto.checked ? "已开启开机启动。" : "已关闭开机启动。") : "切换失败";
+            msg.className = "hint " + (r && r.ok ? "ok" : "err");
+          }
+        } catch (_) {
+          if (msg) {
+            msg.textContent = "切换失败";
+            msg.className = "hint err";
+          }
+        }
+      });
+    }
+    const openData = $("#btn-open-data");
+    if (openData) {
+      openData.addEventListener("click", async () => {
+        const msg = $("#settings-data-msg");
+        try {
+          const r = await api.openDataFolder();
+          if (msg) {
+            msg.textContent = r && r.ok ? "已打开数据文件夹。" : (r && r.error) || "打开失败";
+            msg.className = "hint " + (r && r.ok ? "ok" : "err");
+          }
+        } catch (_) {
+          if (msg) {
+            msg.textContent = "打开失败";
+            msg.className = "hint err";
+          }
+        }
+      });
+    }
+    const exportBtn = $("#btn-export-settings");
+    if (exportBtn) {
+      exportBtn.addEventListener("click", async () => {
+        const msg = $("#settings-data-msg");
+        try {
+          const r = await api.exportSettings();
+          if (msg) {
+            if (r && r.canceled) {
+              msg.textContent = "";
+              return;
+            }
+            msg.textContent = r && r.ok ? "已导出设置（不含密钥明文）。" : (r && r.error) || "导出失败";
+            msg.className = "hint " + (r && r.ok ? "ok" : "err");
+          }
+        } catch (_) {
+          if (msg) {
+            msg.textContent = "导出失败";
+            msg.className = "hint err";
+          }
+        }
+      });
+    }
+    const clearBtn = $("#btn-clear-data");
+    if (clearBtn) {
+      clearBtn.addEventListener("click", async () => {
+        const ok = window.confirm("确定清空本机数据？人设、设置与密钥都会删除，且不可恢复。");
+        if (!ok) return;
+        const ok2 = window.confirm("再确认一次：真的要清空吗？");
+        if (!ok2) return;
+        const msg = $("#settings-data-msg");
+        try {
+          const r = await api.clearLocalData(true);
+          if (msg) {
+            msg.textContent = (r && r.message) || (r && r.ok ? "已清空。" : "清空失败");
+            msg.className = "hint " + (r && r.ok ? "ok" : "err");
+          }
+          refreshStatus();
+          loadPersona();
+          loadAgentEngine();
+        } catch (_) {
+          if (msg) {
+            msg.textContent = "清空失败";
+            msg.className = "hint err";
+          }
+        }
+      });
     }
     wirePersona();
     const bqr = $("#btn-refresh-qr");

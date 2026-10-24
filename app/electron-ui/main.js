@@ -5,7 +5,7 @@
  */
 "use strict";
 
-const { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage } = require("electron");
+const { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, shell, dialog } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const http = require("node:http");
@@ -45,7 +45,13 @@ function configPath(root) {
 }
 
 function readAgentEngineConfig(root) {
-  const defaults = { enabled: false, timeout_ms: 45000, pinned_version: "0.2.1-rc.2" };
+  const defaults = {
+    enabled: false,
+    remember_chat: false,
+    use_tools: false,
+    timeout_ms: 45000,
+    pinned_version: "0.2.1-rc.2",
+  };
   try {
     const p = configPath(root);
     if (!fs.existsSync(p)) return { ...defaults };
@@ -53,6 +59,8 @@ function readAgentEngineConfig(root) {
     const ae = j.agent_engine && typeof j.agent_engine === "object" ? j.agent_engine : {};
     return {
       enabled: ae.enabled === true,
+      remember_chat: ae.remember_chat === true,
+      use_tools: ae.use_tools === true,
       timeout_ms: Number(ae.timeout_ms) > 0 ? Number(ae.timeout_ms) : defaults.timeout_ms,
       pinned_version: String(ae.pinned_version || defaults.pinned_version),
     };
@@ -61,7 +69,7 @@ function readAgentEngineConfig(root) {
   }
 }
 
-function writeAgentEngineEnabled(root, enabled) {
+function writeAgentEngineConfig(root, patch) {
   const p = configPath(root);
   let j = {};
   try {
@@ -70,14 +78,25 @@ function writeAgentEngineEnabled(root, enabled) {
     j = {};
   }
   const cur = readAgentEngineConfig(root);
-  j.agent_engine = {
-    enabled: !!enabled,
+  const next = {
+    enabled: patch && Object.prototype.hasOwnProperty.call(patch, "enabled") ? !!patch.enabled : !!cur.enabled,
+    remember_chat:
+      patch && Object.prototype.hasOwnProperty.call(patch, "remember_chat")
+        ? !!patch.remember_chat
+        : !!cur.remember_chat,
+    use_tools:
+      patch && Object.prototype.hasOwnProperty.call(patch, "use_tools") ? !!patch.use_tools : !!cur.use_tools,
     timeout_ms: cur.timeout_ms,
     pinned_version: cur.pinned_version,
   };
+  j.agent_engine = next;
   fs.mkdirSync(root, { recursive: true });
   fs.writeFileSync(p, JSON.stringify(j, null, 2) + "\n", "utf8");
   return j.agent_engine;
+}
+
+function writeAgentEngineEnabled(root, enabled) {
+  return writeAgentEngineConfig(root, { enabled: !!enabled });
 }
 
 function agentEngineSidecarPresent(root) {
@@ -111,6 +130,38 @@ function agentEngineSidecarPresent(root) {
   }
   return false;
 }
+
+function readOutboundPausedMeta(root) {
+  try {
+    const p = outboundPausedPath(root);
+    if (!fs.existsSync(p)) return { paused: false, since_ms: 0 };
+    const paused = fs.readFileSync(p, "utf8").trim() === "1";
+    const st = fs.statSync(p);
+    return { paused, since_ms: paused ? st.mtimeMs : 0 };
+  } catch {
+    return { paused: false, since_ms: 0 };
+  }
+}
+
+function readActivityBrief(root) {
+  // 本轮无可靠私聊计数；有暂停时长则填一格，否则空态
+  const meta = readOutboundPausedMeta(root);
+  let paused_label = "";
+  if (meta.paused && meta.since_ms) {
+    const mins = Math.max(0, Math.floor((Date.now() - meta.since_ms) / 60000));
+    if (mins < 1) paused_label = "不到 1 分钟";
+    else if (mins < 60) paused_label = mins + " 分钟";
+    else paused_label = Math.floor(mins / 60) + " 小时";
+  }
+  return {
+    has_data: !!paused_label,
+    dm_today: "",
+    last_reply: "",
+    paused_for: paused_label,
+  };
+}
+
+
 
 
 function keyIsSaved(root) {
@@ -324,7 +375,7 @@ function createTray() {
         enabled: false,
       },
       {
-        label: paused ? "恢复出站" : "暂停出站",
+        label: paused ? "恢复自动回复" : "暂停自动回复",
         enabled: loggedIn,
         click: async () => {
           const root = resolveAppDataRoot();
@@ -442,6 +493,11 @@ function registerIpc() {
         outbound_paused: outboundPaused,
         active_persona_title: personaLib.getActiveMeta(root).activeTitle || "",
         active_persona_id: personaLib.getActiveMeta(root).activePersonaId || "",
+        active_persona_summary: personaLib.getActiveMeta(root).summary || "",
+        agent_engine_enabled: !!readAgentEngineConfig(root).enabled,
+        agent_remember_chat: !!readAgentEngineConfig(root).remember_chat,
+        agent_use_tools: !!readAgentEngineConfig(root).use_tools,
+        activity: readActivityBrief(root),
       };
     }
 
@@ -473,6 +529,11 @@ function registerIpc() {
       outbound_paused: outboundPaused,
       active_persona_title: personaLib.getActiveMeta(root).activeTitle || "",
       active_persona_id: personaLib.getActiveMeta(root).activePersonaId || "",
+      active_persona_summary: personaLib.getActiveMeta(root).summary || "",
+      agent_engine_enabled: !!readAgentEngineConfig(root).enabled,
+      agent_remember_chat: !!readAgentEngineConfig(root).remember_chat,
+      agent_use_tools: !!readAgentEngineConfig(root).use_tools,
+      activity: readActivityBrief(root),
     };
   });
 
@@ -668,8 +729,7 @@ function registerIpc() {
       version,
       agent_engine_enabled: !!ae.enabled,
       agent_engine_sidecar: !!sidecar,
-      // About line only when the experimental switch exists
-      agent_engine_label: "本机助手引擎（试验）",
+      agent_engine_label: "本机助手",
     };
   });
 
@@ -679,10 +739,12 @@ function registerIpc() {
     return {
       ok: true,
       enabled: !!ae.enabled,
+      remember_chat: !!ae.remember_chat,
+      use_tools: !!ae.use_tools,
       sidecar: agentEngineSidecarPresent(root),
       timeout_ms: ae.timeout_ms,
       pinned_version: ae.pinned_version,
-      label: "本机助手引擎（试验）",
+      label: "本机助手",
     };
   });
 
@@ -692,9 +754,121 @@ function registerIpc() {
     return {
       ok: true,
       enabled: !!ae.enabled,
+      remember_chat: !!ae.remember_chat,
+      use_tools: !!ae.use_tools,
       sidecar: agentEngineSidecarPresent(root),
-      label: "本机助手引擎（试验）",
+      label: "本机助手",
     };
+  });
+
+  ipcMain.handle("set-agent-engine-options", async (_evt, patch) => {
+    const root = resolveAppDataRoot();
+    const p = patch && typeof patch === "object" ? patch : {};
+    // 使用本机工具需二次确认：由渲染进程确认后再传来 use_tools:true
+    const ae = writeAgentEngineConfig(root, p);
+    return {
+      ok: true,
+      enabled: !!ae.enabled,
+      remember_chat: !!ae.remember_chat,
+      use_tools: !!ae.use_tools,
+      sidecar: agentEngineSidecarPresent(root),
+      label: "本机助手",
+    };
+  });
+
+  ipcMain.handle("get-autostart", async () => {
+    try {
+      const s = app.getLoginItemSettings();
+      return { ok: true, enabled: !!(s && s.openAtLogin) };
+    } catch (e) {
+      return { ok: false, enabled: false, error: String(e && e.message ? e.message : e) };
+    }
+  });
+
+  ipcMain.handle("set-autostart", async (_evt, enabled) => {
+    try {
+      app.setLoginItemSettings({ openAtLogin: !!enabled, path: process.execPath });
+      const s = app.getLoginItemSettings();
+      return { ok: true, enabled: !!(s && s.openAtLogin) };
+    } catch (e) {
+      return { ok: false, error: String(e && e.message ? e.message : e) };
+    }
+  });
+
+  ipcMain.handle("open-data-folder", async () => {
+    const root = resolveAppDataRoot();
+    try {
+      fs.mkdirSync(root, { recursive: true });
+      const r = await shell.openPath(root);
+      return { ok: !r, error: r || "" };
+    } catch (e) {
+      return { ok: false, error: String(e && e.message ? e.message : e) };
+    }
+  });
+
+  ipcMain.handle("export-settings", async () => {
+    const root = resolveAppDataRoot();
+    try {
+      let cfg = {};
+      try {
+        const cp = configPath(root);
+        if (fs.existsSync(cp)) cfg = JSON.parse(fs.readFileSync(cp, "utf8")) || {};
+      } catch {
+        cfg = {};
+      }
+      // 不导出密钥明文
+      const payload = {
+        exported_at: new Date().toISOString(),
+        app: "肥鱼",
+        config: cfg,
+        personas: null,
+        note: "不含模型密钥明文；密钥仍仅保存在本机 secrets 目录。",
+      };
+      try {
+        const jp = path.join(root, "personas.json");
+        if (fs.existsSync(jp)) payload.personas = JSON.parse(fs.readFileSync(jp, "utf8"));
+      } catch {
+        /* ignore */
+      }
+      const win = BrowserWindow.getFocusedWindow() || mainWindow;
+      const saved = await dialog.showSaveDialog(win || undefined, {
+        title: "导出设置",
+        defaultPath: "fatfish-settings.json",
+        filters: [{ name: "JSON", extensions: ["json"] }],
+      });
+      if (saved.canceled || !saved.filePath) return { ok: false, canceled: true };
+      fs.writeFileSync(saved.filePath, JSON.stringify(payload, null, 2) + "\n", "utf8");
+      return { ok: true, path: saved.filePath };
+    } catch (e) {
+      return { ok: false, error: String(e && e.message ? e.message : e) };
+    }
+  });
+
+  ipcMain.handle("clear-local-data", async (_evt, confirmed) => {
+    if (!confirmed) return { ok: false, error: "confirm_required" };
+    const root = resolveAppDataRoot();
+    try {
+      // 清人设库、配置、运行时标记；保留安装目录；密钥文件一并删
+      const targets = [
+        path.join(root, "personas.json"),
+        path.join(root, "persona.txt"),
+        path.join(root, "config.json"),
+        path.join(root, "secrets", "deepseek_api_key"),
+        path.join(root, "runtime", "outbound_paused"),
+        path.join(root, "runtime", "risk_ok"),
+        path.join(root, "runtime", "persona_rev"),
+      ];
+      for (const t of targets) {
+        try {
+          if (fs.existsSync(t)) fs.unlinkSync(t);
+        } catch {
+          /* ignore */
+        }
+      }
+      return { ok: true, message: "已清空本机设置与人设数据。请重新配置密钥与人设。" };
+    } catch (e) {
+      return { ok: false, error: String(e && e.message ? e.message : e) };
+    }
   });
 
   ipcMain.handle("window-minimize", async () => {

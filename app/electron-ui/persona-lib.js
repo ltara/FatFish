@@ -20,6 +20,28 @@ const BUILTIN = {
     "偶尔用「哼」「行吧」「这就离谱」这类口头禅，但不要每句都用、不要玩梗过度。",
 };
 
+const SAMPLE_PERSONAS = [
+  BUILTIN,
+  {
+    id: "builtin-wenrou",
+    title: "温柔倾听",
+    summary: "慢半拍、先接住情绪再给建议",
+    body:
+      "你是主人的私人 QQ 伴侣，语气温柔、耐心。先确认对方情绪，再简短给建议。" +
+      "用简体中文；默认 1～3 句。不要提模型厂商或上游框架名。" +
+      "遇到危险自伤、违法或隐私泄露请求，明确拒绝并劝阻。",
+  },
+  {
+    id: "builtin-liluo",
+    title: "利落助理",
+    summary: "短句直给、少废话、条理清楚",
+    body:
+      "你是主人的私人 QQ 助理。回答短、准、可执行；先结论后要点。" +
+      "用简体中文；默认不超过 3 句。不要提模型厂商或上游框架名。" +
+      "遇到危险自伤、违法或隐私泄露请求，明确拒绝并劝阻。",
+  },
+];
+
 function personasJsonPath(root) {
   return path.join(root, "personas.json");
 }
@@ -55,13 +77,14 @@ function normalizeItem(raw) {
   const body = String(raw.body || "");
   const summary = String(raw.summary || "").trim() || summarize(body, title);
   const updatedAt = String(raw.updatedAt || nowIso());
+  const lastAppliedAt = String(raw.lastAppliedAt || "");
   if (!id) return null;
-  return { id, title, summary, body, updatedAt };
+  return { id, title, summary, body, updatedAt, lastAppliedAt };
 }
 
 function builtinStore() {
-  const item = { ...BUILTIN, updatedAt: nowIso() };
-  return { activePersonaId: item.id, items: [item] };
+  const items = SAMPLE_PERSONAS.map((x) => ({ ...x, updatedAt: nowIso(), lastAppliedAt: "" }));
+  return { activePersonaId: items[0].id, items };
 }
 
 function migrateFromLegacy(root) {
@@ -103,9 +126,19 @@ function readStore(root) {
         writeStore(root, s);
         return s;
       }
+      // 补齐示例人设（不覆盖用户已有同 id）
+      let changed = false;
+      for (const sample of SAMPLE_PERSONAS) {
+        if (!items.some((x) => x.id === sample.id)) {
+          items.push({ ...sample, updatedAt: nowIso(), lastAppliedAt: "" });
+          changed = true;
+        }
+      }
       let active = String(j.activePersonaId || "");
       if (!items.some((x) => x.id === active)) active = items[0].id;
-      return { activePersonaId: active, items };
+      const store = { activePersonaId: active, items };
+      if (changed) writeStore(root, store);
+      return store;
     }
   } catch {
     /* fallthrough */
@@ -152,6 +185,10 @@ function listPersonas(root) {
       title: it.title,
       summary: it.summary,
       updatedAt: it.updatedAt,
+      lastAppliedAt: it.lastAppliedAt || "",
+      bodyPreview: it.id === store.activePersonaId
+        ? summarize(it.body, it.title)
+        : "",
       active: it.id === store.activePersonaId,
     })),
   };
@@ -254,6 +291,10 @@ function applyPersona(root, id) {
   const it = store.items.find((x) => x.id === id);
   if (!it) return { ok: false, error: "not_found" };
   store.activePersonaId = id;
+  const now = nowIso();
+  store.items = store.items.map((x) =>
+    x.id === id ? { ...x, lastAppliedAt: now, updatedAt: now } : x
+  );
   writeStore(root, store);
   return {
     ok: true,

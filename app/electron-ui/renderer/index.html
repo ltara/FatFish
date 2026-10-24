@@ -120,7 +120,7 @@
       </div>
     </div>
 
-    <!-- 主壳：首页 / 人设 / 设置（Magpie IA P0） -->
+    <!-- 主壳：首页 / 人设 / 设置（结构 P0） -->
     <div class="app" id="main-app">
       <aside class="sidebar">
         <nav aria-label="主导航">
@@ -154,7 +154,7 @@
             </button>
           </div>
 
-          <p id="status-capsule" class="status-capsule selectable" aria-live="polite">检测中…</p>
+          <p id="status-capsule" class="status-capsule selectable hidden" aria-live="polite" hidden>检测中…</p>
 
           <div class="home-primary">
             <button type="button" id="btn-pause-toggle" class="btn-primary btn-pause">暂停出站</button>
@@ -279,7 +279,7 @@
             <p class="page-sub">密钥与权限仅保存在本机。保存后不会回显完整内容。</p>
           </header>
 
-          <div class="settings-block card form-card" id="settings-model">
+          <div class="settings-block" id="settings-model">
             <h3 class="settings-block-title">模型与 Key</h3>
             <label class="field">
               <span class="field-label">模型 API Key</span>
@@ -292,7 +292,7 @@
             <p id="settings-msg" class="hint selectable"></p>
           </div>
 
-          <div class="settings-block card form-card" id="agent-engine-card">
+          <div class="settings-block" id="agent-engine-card">
             <h3 class="settings-block-title">本机助手权限</h3>
             <label class="check-row outbound-toggle">
               <input type="checkbox" id="agent-engine-enabled" />
@@ -305,7 +305,7 @@
             </details>
           </div>
 
-          <div class="settings-block card form-card" id="settings-risk">
+          <div class="settings-block" id="settings-risk">
             <h3 class="settings-block-title">风险与隐私</h3>
             <p class="hint">请仅使用专用小号登录 QQ。Key 与对话数据默认保存在本机，不提供云端代管。出站暂停后收到私聊不会自动回复。</p>
           </div>

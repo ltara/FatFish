@@ -1,11 +1,12 @@
 /* 肥鱼 — 深色桌面客户端主题 Token（产品简报） */
 :root {
   color-scheme: dark;
-  --bg: #0F1419;
-  --surface: #1A2332;
-  --border: #2A3544;
-  --primary: #3B82F6;
-  --primary-hover: #2563EB;
+  --bg: #0C0F14;
+  --surface: #141A22;
+  --surface-2: #1A222D;
+  --border: #243041;
+  --primary: #5A8FA8;
+  --primary-hover: #4A7C94;
   --accent: #F59E0B;
   --success: #22C55E;
   --success-bg: rgba(34, 197, 94, 0.14);
@@ -14,13 +15,14 @@
   --danger: #EF4444;
   --danger-bg: rgba(239, 68, 68, 0.14);
   --text: #E8EEF5;
-  --muted: #8B9BB0;
-  --primary-soft: rgba(59, 130, 246, 0.16);
+  --muted: #7A8799;
+  --primary-soft: rgba(90, 143, 168, 0.14);
 
-  --radius: 12px;
-  --radius-sm: 8px;
+  --radius: 10px;
+  --radius-sm: 6px;
   --titlebar-h: 36px;
-  --sidebar-w: 168px;
+  --sidebar-w: 148px;
+  --content-pad: 18px;
   --login-w: 440px;
 
   --space-1: 4px;
@@ -90,11 +92,10 @@ button { font: inherit; }
   font-weight: 600;
 }
 .titlebar-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-soft);
 }
 .titlebar-controls {
   display: flex;
@@ -138,11 +139,10 @@ button { font: inherit; }
 .splash-inner { text-align: center; }
 .splash-mark {
   display: inline-block;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   background: var(--primary);
-  box-shadow: 0 0 0 6px var(--primary-soft);
   margin-bottom: 16px;
 }
 .splash-title {
@@ -180,7 +180,7 @@ button { font: inherit; }
 }
 .onboard-card h1 {
   margin: 0 0 var(--space-3);
-  font-size: 20px;
+  font-size: 17px;
   font-weight: 600;
 }
 .onboard-card p {
@@ -230,11 +230,10 @@ button { font: inherit; }
   padding: var(--space-2) var(--space-3) var(--space-4);
 }
 .brand-mark {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-soft);
 }
 .brand-text {
   font-weight: 600;
@@ -249,22 +248,24 @@ button { font: inherit; }
 }
 .nav-btn {
   text-align: left;
-  border: 0;
+  border: 1px solid transparent;
   background: transparent;
   color: var(--muted);
-  padding: 10px 12px;
+  height: 34px;
+  padding: 0 10px;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: 14px;
-  transition: background 0.12s, color 0.12s;
+  font-size: 13px;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 .nav-btn:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--surface-2);
   color: var(--text);
 }
 .nav-btn.active {
   background: var(--primary-soft);
-  color: var(--primary);
+  color: var(--text);
+  border-color: rgba(90, 143, 168, 0.35);
   font-weight: 600;
 }
 .sidebar-foot {
@@ -276,7 +277,7 @@ button { font: inherit; }
 
 .content {
   flex: 1;
-  padding: var(--space-5);
+  padding: var(--content-pad);
   overflow: auto;
   min-width: 0;
   background: var(--bg);
@@ -287,7 +288,7 @@ button { font: inherit; }
 .page-head { margin-bottom: var(--space-4); }
 .page-head h2 {
   margin: 0 0 var(--space-2);
-  font-size: 20px;
+  font-size: 16px;
   font-weight: 600;
 }
 .page-sub {
@@ -315,11 +316,12 @@ button { font: inherit; }
   justify-content: space-between;
   align-items: center;
   gap: var(--space-3);
-  padding: 14px var(--space-4);
+  min-height: 36px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--border);
 }
 .status-list li:last-child { border-bottom: 0; }
-.label { font-weight: 600; font-size: 14px; }
+.label { font-weight: 600; font-size: 12px; color: var(--muted); }
 
 .badge {
   font-size: 12px;
@@ -350,20 +352,22 @@ button { font: inherit; }
   display: block;
   font-weight: 600;
   margin-bottom: var(--space-2);
-  font-size: 14px;
+  font-size: 12px;
+  color: var(--muted);
 }
 .field input,
 .field textarea {
   display: block;
   width: 100%;
-  padding: 10px 12px;
+  min-height: 32px;
+  padding: 6px 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   font: inherit;
   font-size: 14px;
   background: var(--bg);
   color: var(--text);
-  transition: border-color 0.12s, box-shadow 0.12s;
+  transition: border-color 0.12s, background 0.12s;
   resize: vertical;
   -webkit-app-region: no-drag;
   user-select: text;
@@ -372,7 +376,7 @@ button { font: inherit; }
 .field textarea:focus {
   outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-soft);
+  background: var(--surface-2);
 }
 .field input::placeholder,
 .field textarea::placeholder { color: var(--muted); }
@@ -390,12 +394,12 @@ button { font: inherit; }
   font: inherit;
   cursor: pointer;
   border-radius: var(--radius-sm);
-  height: 38px;
-  padding: 0 16px;
+  height: 32px;
+  padding: 0 14px;
   border: 1px solid transparent;
   transition: background 0.12s, border-color 0.12s, opacity 0.12s;
   font-weight: 600;
-  font-size: 14px;
+  font-size: 13px;
   -webkit-app-region: no-drag;
 }
 .btn-primary:disabled,
@@ -442,15 +446,14 @@ button { font: inherit; }
 }
 .login-brand h1 {
   margin: 0;
-  font-size: 20px;
+  font-size: 17px;
   font-weight: 600;
 }
 .login-mark {
-  width: 12px;
-  height: 12px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: var(--primary);
-  box-shadow: 0 0 0 4px var(--primary-soft);
 }
 .login-qr-wrap { margin-top: var(--space-2); text-align: center; }
 .qr-frame {
@@ -508,7 +511,7 @@ button { font: inherit; }
 .verify-title,
 .success-title {
   margin: 8px 0 4px;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--success);
 }
@@ -593,8 +596,8 @@ button { font: inherit; }
   font: inherit;
 }
 .persona-item:hover {
-  border-color: var(--primary);
-  background: rgba(59, 130, 246, 0.06);
+  border-color: rgba(90, 143, 168, 0.4);
+  background: var(--surface-2);
 }
 .persona-item-main { min-width: 0; flex: 1; }
 .persona-item-title {
@@ -627,14 +630,14 @@ button { font: inherit; }
 }
 .danger-text { color: var(--danger) !important; }
 .btn-sm {
-  height: 30px;
-  padding: 0 12px;
+  height: 28px;
+  padding: 0 10px;
   font-size: 12px;
 }
 #page-persona { max-width: 44rem; }
 
 
-/* —— Magpie IA P0 / Critiquito F1–F7 —— */
+/* —— 结构 P0 / Critiquito F1–F7 —— */
 .sidebar {
   padding-top: var(--space-4);
 }
@@ -655,10 +658,11 @@ button { font: inherit; }
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  height: 36px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  padding: 0 12px;
   font-size: 12px;
   color: var(--muted);
   cursor: pointer;
@@ -666,8 +670,8 @@ button { font: inherit; }
   transition: border-color 0.12s, background 0.12s;
 }
 .status-chip:hover {
-  border-color: var(--primary);
-  background: rgba(59, 130, 246, 0.06);
+  border-color: rgba(90, 143, 168, 0.45);
+  background: var(--surface-2);
 }
 .status-chip strong { color: var(--text); font-weight: 600; }
 .status-chip .chip-label { opacity: 0.85; }
@@ -680,10 +684,7 @@ button { font: inherit; }
 .status-chip.info .dot { background: var(--primary); }
 
 .status-capsule {
-  margin: 0 0 var(--space-4);
-  font-size: 13px;
-  color: var(--muted);
-  line-height: 1.4;
+  display: none; /* 避免与 status-bar 双摘要 */
 }
 
 .home-primary { margin-bottom: var(--space-3); }
@@ -710,11 +711,11 @@ button { font: inherit; }
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  background: var(--primary-soft);
-  border: 1px solid rgba(59, 130, 246, 0.35);
+  background: var(--surface-2);
+  border: 1px solid rgba(90, 143, 168, 0.35);
   border-radius: var(--radius-sm);
-  padding: 10px 14px;
-  margin-bottom: var(--space-4);
+  padding: 8px 12px;
+  margin-bottom: var(--space-3);
 }
 .onboard-banner-text {
   margin: 0;
@@ -783,7 +784,7 @@ button { font: inherit; }
 }
 .persona-search {
   width: 100%;
-  height: 34px;
+  height: 32px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--bg);
@@ -815,7 +816,10 @@ button { font: inherit; }
   cursor: pointer;
 }
 .persona-switcher-item:hover,
-.persona-switcher-item.active { background: rgba(59, 130, 246, 0.12); }
+.persona-switcher-item.active {
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px rgba(90, 143, 168, 0.35);
+}
 .persona-switcher-item .psi-title {
   grid-column: 1;
   font-weight: 600;
@@ -867,19 +871,37 @@ button { font: inherit; }
   color: inherit;
   font: inherit;
   text-align: left;
-  padding: 14px 0 14px 16px;
+  padding: 10px 0 10px 12px;
   cursor: pointer;
   min-width: 0;
   flex: 1;
 }
 .persona-item-actions {
-  padding: 14px 16px 14px 0;
+  padding: 10px 12px 10px 0;
 }
 
-.settings-block { margin-bottom: var(--space-3); }
+.settings-block {
+  margin-bottom: 0;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.settings-block.card,
+.settings-block.form-card {
+  background: transparent;
+  border-color: transparent;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  padding: 14px 0;
+}
 .settings-block-title {
-  margin: 0 0 12px;
-  font-size: 14px;
+  margin: 0 0 10px;
+  font-size: 13px;
   font-weight: 600;
 }
 .settings-fold {
@@ -896,3 +918,18 @@ button { font: inherit; }
 .settings-fold .hint { margin-top: 8px; }
 
 .about-block .settings-block-title { margin-bottom: 8px; }
+
+
+/* —— Visual P0 density / token polish —— */
+.sidebar { padding: 12px 8px; }
+.home-primary { margin-bottom: 12px; }
+.btn-pause { height: 32px; min-width: 120px; }
+.persona-item { border-radius: var(--radius-sm); }
+.persona-empty { padding: 36px 14px; border-radius: var(--radius-sm); }
+.about-block {
+  border-top: 0;
+  margin-top: 0;
+  padding-top: 14px;
+}
+.about-name { font-size: 14px; }
+#page-settings .card.form-card { max-width: none; }

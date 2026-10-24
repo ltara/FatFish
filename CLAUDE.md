@@ -54,17 +54,17 @@ node local-server.mjs    # 127.0.0.1:8787
 
 Electron 外壳 → fork **Core**（`app/core`，由 bridge 演进而来，两者之间走 IPC）→ Core 拉起 **DSH runtime**（`vendor/dsh/` 中的官方单文件 exe，`dsh --profile` 自有 `fatfish` profile，通过 stdio 走按行分隔的 JSON-RPC）。Core 通过 **Channel 适配层**接入 IM 平台，QQ 是第一个实现（NapCat WS `:3001`）。DSH 负责人格、会话持久化、记忆、工具、权限审批和定时提醒，肥鱼不自研 Agent 能力。`DSH_HOME` = `%AppData%\FatFish\dsh\`。
 
-### Core（`app/core`，M3 第 1 步已完成，尚未接入 Electron）
+### Core（`app/core`，M3 第 1、2 步已完成，已接入 Electron）
 
 `server.mjs`（入口，IPC 协议写在文件头注释里）→ `engine-host.mjs`（DSH 进程、profile 安装、会话恢复、崩溃重启；key、人设或模型变化时重启 runtime；审批回环服务）+ `router.mjs`（只放行 `config.owner_qq`，处理暂停，当日统计存在 `runtime/stats.json`）+ `channels/qq.mjs`（OneBot WS，只连 loopback，发送用消息段数组，不用 CQ 码）。`dsh-client.mjs` 是 JSON-RPC 客户端；`profile/` 是 fatfish profile，每次启动时整份覆盖到 `$DSH_HOME/profiles/fatfish`。Core 的日志只记录元数据，e2e 会检查日志里不出现消息原文。
 
-### 当前代码（Electron 仍然启动旧的 bridge）
+### Electron 外壳与进程管理
 
 三个协同工作的本地进程，全部绑定 `127.0.0.1` 并使用 token 鉴权（绝不绑定 `0.0.0.0`）。`app/electron-ui/service-manager.js` 中的 `ServiceManager.startAll()` 按顺序启动它们，退出时 `stopAll()` 将其结束（依靠 `runtime/` 中的 PID 文件和子进程引用，Windows 上使用 `taskkill /T /F`）：
 
 1. **本地设置服务** — `app/shell/local-server.mjs`（`:8787`），通过 `ELECTRON_RUN_AS_NODE=1` + `process.execPath` 运行，失败时回退到 `vendor/node/node.exe`。属于冗余组件，M3 删除（保存 Key 已由主进程直接写文件）。
 2. **后台登录/WS 服务** — `vendor/napcat` 中的第三方 Win 启动器（`launcher-user.bat`/`launcher.bat`），提供登录页（`:6099`）和本地 WS（`:3001`）。不能以 Electron-as-Node 方式运行；需要用户已安装官方 QQ。`.bat` 文件必须使用 CRLF 换行（由 `.gitattributes` + `scripts/ensure-crlf*` 保证，`dist`/`pack` 会自动运行），否则 cmd 会立即退出。
-3. **回复引擎** — `app/bridge/server.mjs` 连接 WS，调用 DeepSeek，从 AppData 读取配置/密钥/人设。`agent-adapter.mjs` 每条消息启动一次 `dsh headless`（零工具，默认关闭），属于旧方案，M3 由 `engine-host.mjs`（常驻 sdk profile）取代。
+3. **Core** — `app/core/server.mjs`，通过 `fork`（Electron-as-Node）启动，带 IPC。`service-manager.js` 缓存 Core 上报的状态（`getCore()`），用 `sendCore()` 下发命令（`pause` / `reload` / `shutdown` / `approval_answer`）。审批 UI 要到 M4 才做；在那之前，没有监听者时一律拒绝。`app/bridge/` 已不再启动，会在 M3 第 3 步删除。
 
 Electron UI（`app/electron-ui`）：`main.js`（窗口、托盘、所有 `ipcMain.handle` 处理器）↔ `preload.js`（`contextBridge` → `window.fatfish`，每个 IPC 通道一行封装）↔ `renderer/`（单窗口：首页 / 人设 / 功能 / 设置页面，风险确认、登录、首次设置等覆盖层；纯 HTML/JS/CSS，无框架）。新增涉及主数据的功能需要三处同时修改：`main.js` 中的处理器、`preload.js` 中的封装、`renderer.js` 中的调用。登录是应用内对 `http://127.0.0.1:6099/webui/` 的 `<webview>`；禁止使用 `shell.openExternal` 或系统浏览器。`login-api.js` 封装登录服务的 API；`persona-lib.js` 管理人设库（`personas.json`），应用某个人设时会将其写入 `persona.txt`，并通过 `runtime/persona_rev` 通知 bridge 重新加载。`runtime/outbound_paused` 是 bridge 检查的“暂停外发”标志。这两个文件标志在 M3 改为 IPC。
 

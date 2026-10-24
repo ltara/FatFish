@@ -36,11 +36,21 @@
     "asar": true,
     "extraResources": [
       {
-        "from": "../bridge",
-        "to": "bridge",
+        "from": "../core",
+        "to": "core",
         "filter": [
           "**/*",
+          "!dev/**",
           "!**/node_modules/.cache/**"
+        ]
+      },
+      {
+        "from": "../../vendor/dsh",
+        "to": "vendor/dsh",
+        "filter": [
+          "*.exe",
+          "LICENSE",
+          "THIRD_PARTY_NOTICES.md"
         ]
       },
       {

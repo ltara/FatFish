@@ -27,7 +27,11 @@ if (!fs.existsSync(serviceMgr)) {
   process.exit(1);
 }
 
-for (const p of [mainJs, preload, serviceMgr, path.join(root, "renderer", "renderer.js")]) {
+const coreDir = path.join(root, "..", "core");
+const coreFiles = ["server.mjs", "engine-host.mjs", "router.mjs", "dsh-client.mjs", "paths.mjs", "channels/qq.mjs"]
+  .map((f) => path.join(coreDir, f));
+
+for (const p of [mainJs, preload, serviceMgr, path.join(root, "renderer", "renderer.js"), ...coreFiles]) {
   const r = spawnSync(process.execPath, ["--check", p], { encoding: "utf8" });
   if (r.status !== 0) {
     console.error("syntax fail", p, r.stderr || r.stdout);

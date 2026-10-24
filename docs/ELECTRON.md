@@ -24,10 +24,9 @@ app/electron-ui/
    用 `ELECTRON_RUN_AS_NODE=1` + `process.execPath` 跑；失败再回退 `vendor/node/node.exe`。
 2. **后台登录服务** — `vendor/napcat` 下 **Win 自带启动器**（`launcher-user.bat` / `launcher.bat`）  
    **禁止** Electron-as-Node；仅 Windows。提供登录页（约 `6099`）与本机 WS（约 `3001`）。
-3. **智能回复引擎** — `bridge/server.mjs`（读 AppData Key/token，连本机 WS）  
-   同样 `ELECTRON_RUN_AS_NODE`。
+3. **伙伴核心 Core** — `core/server.mjs`，以 `child_process.fork` + `ELECTRON_RUN_AS_NODE` 启动，**带 IPC 通道**（协议见文件头注释）。Core 再拉起 `vendor/dsh` 里的智能引擎，并连接本机 WS。日志写到 `logs/core.log`，只记录元数据。
 
-关窗口 / `before-quit` / 退出：`stopAll()` 按 PID 文件与子进程引用杀掉（Windows `taskkill /T /F`），并尽力结束后台 boot helper；**不**杀用户 QQ 主进程。
+关窗口 / `before-quit` / 退出：`stopAll()` 先通过 IPC 让 Core 正常关闭引擎，最多等 8 秒，好让会话日志落盘；然后再按 PID 文件与子进程引用杀掉（Windows `taskkill /T /F`），并尽力结束后台 boot helper；**不**杀用户 QQ 主进程。
 
 状态页：启动中显示「正在启动本机服务…」；失败给出可操作提示（缺 QQ、端口占用、后台目录缺失）。**不要**再要求用户另开 `start.ps1`。
 
@@ -39,11 +38,12 @@ app/electron-ui/
 |---|---|---|
 | 根 | 仓库根 `fatfish-win-client/` | `process.resourcesPath` |
 | 设置服务 | `app/shell/local-server.mjs` | `resources/shell/local-server.mjs` |
-| 引擎 | `app/bridge/server.mjs` | `resources/bridge/server.mjs` |
+| Core | `app/core/server.mjs` | `resources/core/server.mjs` |
+| 智能引擎 | `vendor/dsh/*.exe` | `resources/vendor/dsh/*.exe` |
 | 后台 | `vendor/napcat/` | `resources/vendor/napcat/` |
 | Node 便携 | `vendor/node/`（可选回退） | `resources/vendor/node/` |
 
-`package.json` → `build.extraResources` 已包含：`bridge/`、`shell/`、`vendor/napcat`、`vendor/node`。体积大属预期（后台组件 + 便携 Node）。
+`package.json` → `build.extraResources` 已包含：`core/`（不含 `dev/`）、`shell/`、`vendor/dsh`、`vendor/napcat`、`vendor/node`。体积大属预期（智能引擎约 279 MB + 后台组件 + 便携 Node）。打包前必须先在 `app/core` 里执行 `npm install`，否则打进去的包里没有 `ws`。
 
 ## Windows 开发
 
@@ -78,7 +78,7 @@ Linux 上会跳过 Win 后台启动器（`backend_win_only` / degraded），语�
 
 ## 云 Win 打包
 
-在云机仓库根已同步、且 `vendor/napcat` + `vendor/node` 已就位时：
+在云机仓库根已同步、`vendor/dsh` + `vendor/napcat` + `vendor/node` 已就位（`fetch-vendor`），并且 `app/core` 已执行 `npm install` 时：
 
 ```powershell
 cd C:\fatfish\fatfish-win-client\app\electron-ui

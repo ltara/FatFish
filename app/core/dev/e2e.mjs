@@ -1,6 +1,7 @@
 /**
  * Core end-to-end check against a fake OneBot backend (no QQ needed). Windows + vendor/dsh + real key:
  *   DEEPSEEK_API_KEY=... node dev/e2e.mjs
+ *   E2E_EXEC_PATH=<electron.exe> …   # run Core under Electron-as-Node, as packaged
  * Uses a throwaway FATFISH_APPDATA. Exit code 0 only if every check passes.
  */
 import { fork } from "node:child_process";
@@ -85,7 +86,11 @@ let coreLog = "";
 const ipc = [];
 let approvalAnswer = "rejected";
 function startCore() {
-  core = fork(CORE, [], { env: { ...process.env, FATFISH_APPDATA: appdata }, silent: true });
+  // E2E_EXEC_PATH=<electron.exe> forks Core the way the packaged app does (Electron-as-Node).
+  const execPath = process.env.E2E_EXEC_PATH;
+  const env = { ...process.env, FATFISH_APPDATA: appdata };
+  if (execPath) env.ELECTRON_RUN_AS_NODE = "1";
+  core = fork(CORE, [], { env, silent: true, ...(execPath ? { execPath } : {}) });
   core.stdout.on("data", (d) => (coreLog += d));
   core.stderr.on("data", (d) => (coreLog += d));
   core.on("message", (m) => {

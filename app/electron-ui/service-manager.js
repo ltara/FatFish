@@ -1,6 +1,7 @@
 /**
- * FatFish local service manager — start/stop local-server, backend (Win launcher), bridge.
- * User-facing strings must never name QQNT / NapCat / OneBot / 肥鱼桥 / Docker.
+ * FatFish local service manager — start/stop local-server, backend (Win launcher), core.
+ * Core is forked with an IPC channel; its messages are cached here and re-emitted as "core-message".
+ * User-facing strings must never name upstream components (see CLAUDE.md).
  */
 "use strict";
 
@@ -9,7 +10,10 @@ const path = require("node:path");
 const os = require("node:os");
 const net = require("node:net");
 const crypto = require("node:crypto");
-const { spawn, execFile } = require("node:child_process");
+const { EventEmitter } = require("node:events");
+const { spawn, fork, execFile } = require("node:child_process");
+
+const CORE_SHUTDOWN_GRACE_MS = 8000;
 
 const DEFAULT_SETTINGS_PORT = 8787;
 const DEFAULT_LOGIN_PORT = 6099;
@@ -24,11 +28,11 @@ const DEFAULT_BACKEND_PORT = 3001;
  *   error_code: string|null,
  *   local_server: boolean,
  *   backend: boolean,
- *   bridge: boolean,
+ *   core: boolean,
  *   settings_port: number,
  *   login_port: number,
  *   backend_port: number,
- *   pids: { local_server?: number, backend?: number, bridge?: number }
+ *   pids: { local_server?: number, backend?: number, core?: number }
  * }}
  */
 function emptyState() {
@@ -38,7 +42,7 @@ function emptyState() {
     error_code: null,
     local_server: false,
     backend: false,
-    bridge: false,
+    core: false,
     settings_port: DEFAULT_SETTINGS_PORT,
     login_port: DEFAULT_LOGIN_PORT,
     backend_port: DEFAULT_BACKEND_PORT,
@@ -46,11 +50,17 @@ function emptyState() {
   };
 }
 
-class ServiceManager {
+/** Last-known Core snapshot, built from its IPC messages (see app/core/server.mjs header). */
+function emptyCore() {
+  return { engine: "stopped", engine_error: null, channels: {}, self: {}, stats: null, last_turn_error: null };
+}
+
+class ServiceManager extends EventEmitter {
   /**
    * @param {{ appDataRoot: string, isPackaged?: boolean, resourcesPath?: string, electronExecPath?: string }} opts
    */
   constructor(opts) {
+    super();
     this.appDataRoot = opts.appDataRoot;
     this.isPackaged = !!opts.isPackaged;
     this.resourcesPath = opts.resourcesPath || process.resourcesPath || "";
@@ -58,15 +68,55 @@ class ServiceManager {
     this._children = {
       local_server: null,
       backend: null,
-      bridge: null,
+      core: null,
     };
     this._pids = {};
     this._state = emptyState();
+    this._core = emptyCore();
     this._startPromise = null;
   }
 
   getState() {
     return { ...this._state, pids: { ...this._pids } };
+  }
+
+  getCore() {
+    return JSON.parse(JSON.stringify(this._core));
+  }
+
+  /** Send a command to Core; returns false when Core is not running. */
+  sendCore(msg) {
+    const c = this._children.core;
+    if (!c || !c.connected) return false;
+    try {
+      c.send(msg);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  _onCoreMessage(m) {
+    if (!m || typeof m !== "object") return;
+    const core = this._core;
+    if (m.type === "engine") {
+      core.engine = m.state;
+      core.engine_error = m.error || null;
+    } else if (m.type === "channel") {
+      core.channels[m.id] = m.state;
+    } else if (m.type === "self") {
+      core.self[m.id] = { userId: m.userId, nickname: m.nickname };
+    } else if (m.type === "stats") {
+      const { type, ...stats } = m;
+      core.stats = stats;
+    } else if (m.type === "turn_error") {
+      core.last_turn_error = { error: m.error, at: Date.now() };
+    } else if (m.type === "approval" && this.listenerCount("approval") === 0) {
+      // No approval UI attached yet (M4): fail closed.
+      this.sendCore({ type: "approval_answer", id: m.id, outcome: "rejected" });
+    }
+    if (m.type === "approval") this.emit("approval", m);
+    this.emit("core-message", m);
   }
 
   /** Repo root (dev) or resources root (prod). */
@@ -248,8 +298,8 @@ class ServiceManager {
 
   /**
    * Paths layout:
-   *   Dev:  <repo>/app/shell/local-server.mjs, <repo>/app/bridge/server.mjs, <repo>/vendor/napcat
-   *   Prod: <resources>/shell/..., <resources>/bridge/..., <resources>/vendor/napcat
+   *   Dev:  <repo>/app/shell/local-server.mjs, <repo>/app/core/server.mjs, <repo>/vendor/{napcat,dsh}
+   *   Prod: <resources>/shell/..., <resources>/core/..., <resources>/vendor/{napcat,dsh}
    */
   resolvePaths() {
     const root = this.resolveBundleRoot();
@@ -269,19 +319,19 @@ class ServiceManager {
         : ["app/shell/local-server.mjs", "shell/local-server.mjs"]
     );
 
-    const bridgeJs = candidates(
+    const coreJs = candidates(
       packaged
-        ? ["bridge/server.mjs", "app/bridge/server.mjs"]
-        : ["app/bridge/server.mjs", "bridge/server.mjs"]
+        ? ["core/server.mjs", "app/core/server.mjs"]
+        : ["app/core/server.mjs", "core/server.mjs"]
     );
 
-    const bridgeDir = bridgeJs ? path.dirname(bridgeJs) : null;
+    const coreDir = coreJs ? path.dirname(coreJs) : null;
     const shellDir = localServer ? path.dirname(localServer) : null;
 
     const napcatDir = this.resolveBackendDir(root);
     const nodeExe = this.resolveNodeExe(root);
 
-    return { root, localServer, bridgeJs, bridgeDir, shellDir, napcatDir, nodeExe };
+    return { root, localServer, coreJs, coreDir, shellDir, napcatDir, nodeExe };
   }
 
   resolveBackendDir(root) {
@@ -409,6 +459,36 @@ class ServiceManager {
       /* ignore */
     }
 
+    return child;
+  }
+
+  /**
+   * Fork Core with an IPC channel (Electron-as-Node preferred, portable node.exe fallback).
+   */
+  forkCore(scriptPath, cwd) {
+    const logs = path.join(this.appDataRoot, "logs");
+    fs.mkdirSync(logs, { recursive: true });
+    const outFd = fs.openSync(path.join(logs, "core.log"), "a");
+    const errFd = fs.openSync(path.join(logs, "core.err.log"), "a");
+    const useElectron = this.electronExecPath && fs.existsSync(this.electronExecPath);
+    const execPath = useElectron ? this.electronExecPath : this.resolvePaths().nodeExe || "node";
+    const env = { ...process.env, FATFISH_APPDATA: this.appDataRoot };
+    if (useElectron) env.ELECTRON_RUN_AS_NODE = "1";
+
+    const child = fork(scriptPath, [], {
+      cwd,
+      env,
+      execPath,
+      stdio: ["ignore", outFd, errFd, "ipc"],
+      windowsHide: true,
+    });
+    try {
+      fs.closeSync(outFd);
+      fs.closeSync(errFd);
+    } catch {
+      /* ignore */
+    }
+    child.on("message", (m) => this._onCoreMessage(m));
     return child;
   }
 
@@ -634,40 +714,41 @@ class ServiceManager {
       (await this.probeTcp(ports.backend)) || (await this.probeTcp(ports.login));
     this._state.login_reachable_hint = await this.probeTcp(ports.login);
 
-    // --- 3) bridge (connects ws://127.0.0.1:3001, reads AppData key/token) ---
-    if (!paths.bridgeJs) {
+    // --- 3) core (engine + channels; connects ws://127.0.0.1:3001, reads AppData key/token) ---
+    if (!paths.coreJs) {
       if (this._state.phase !== "degraded" && this._state.phase !== "error") {
         this._fail(
-          "missing_bridge",
+          "missing_core",
           "智能回复组件缺失。请重新安装客户端。"
         );
       }
     } else {
-      // Bridge is long-running WS client; no dedicated listen port — track by child only.
-      if (!this._children.bridge || this._children.bridge.killed) {
+      // Core has no listen port — track by child only.
+      if (!this._children.core || this._children.core.exitCode !== null) {
         try {
-          const child = this.spawnNodeScript(paths.bridgeJs, paths.bridgeDir, "bridge");
-          this._children.bridge = child;
-          if (child && child.pid) this.writePid("bridge", child.pid);
-          child.on("exit", (code) => {
-            this._children.bridge = null;
-            this.clearPidFile("bridge");
-            if (this._state.phase === "running") {
-              this._state.bridge = false;
-            }
+          const child = this.forkCore(paths.coreJs, paths.coreDir);
+          this._children.core = child;
+          this._core = emptyCore();
+          if (child && child.pid) this.writePid("core", child.pid);
+          child.on("exit", () => {
+            if (this._children.core !== child) return;
+            this._children.core = null;
+            this.clearPidFile("core");
+            this._state.core = false;
+            this._core.engine = "stopped";
           });
-          this._state.bridge = true;
+          this._state.core = true;
         } catch (e) {
-          this._state.bridge = false;
+          this._state.core = false;
           if (!this._state.error) {
-            this._state.error_code = "spawn_bridge";
+            this._state.error_code = "spawn_core";
             this._state.error =
               "智能回复引擎启动失败。" + String(e && e.message ? e.message : e).slice(0, 80);
             this._state.phase = "degraded";
           }
         }
       } else {
-        this._state.bridge = true;
+        this._state.core = true;
       }
     }
 
@@ -680,7 +761,7 @@ class ServiceManager {
     if (this._state.phase === "error") {
       return this.getState();
     }
-    if (this._state.local_server && this._state.bridge && this._state.backend) {
+    if (this._state.local_server && this._state.core && this._state.backend) {
       this._state.phase = "running";
       this._state.error = null;
       this._state.error_code = null;
@@ -712,8 +793,17 @@ class ServiceManager {
    * Stop all managed children. Idempotent.
    */
   async stopAll() {
+    // Let Core shut its engine down cleanly (flushes session logs) before tree-killing.
+    const core = this._children.core;
+    if (core && core.exitCode === null && this.sendCore({ type: "shutdown" })) {
+      await Promise.race([
+        new Promise((r) => core.once("exit", r)),
+        this.sleep(CORE_SHUTDOWN_GRACE_MS),
+      ]);
+    }
+
     const fileMap = {
-      bridge: "bridge",
+      core: "core",
       local_server: "local-server",
       backend: "napcat",
     };
@@ -740,7 +830,8 @@ class ServiceManager {
 
     this.killBackendHelpers();
 
-    for (const key of ["bridge", "local-server", "napcat"]) {
+    // "bridge" kept for pid files left by pre-Core installs.
+    for (const key of ["core", "bridge", "local-server", "napcat"]) {
       try {
         const f = path.join(this.appDataRoot, "runtime", `${key}.pid`);
         if (fs.existsSync(f)) {
@@ -757,7 +848,8 @@ class ServiceManager {
     this._state.phase = "stopped";
     this._state.local_server = false;
     this._state.backend = false;
-    this._state.bridge = false;
+    this._state.core = false;
+    this._core = emptyCore();
     return this.getState();
   }
 
@@ -770,7 +862,7 @@ class ServiceManager {
     const loginUp = await this.probeTcp(ports.login);
     const backendUp = await this.probeTcp(ports.backend);
     this._state.backend = backendUp || loginUp;
-    this._state.bridge = !!(this._children.bridge && !this._children.bridge.killed);
+    this._state.core = !!(this._children.core && this._children.core.exitCode === null);
     return this.getState();
   }
 }

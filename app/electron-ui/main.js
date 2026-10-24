@@ -510,6 +510,7 @@ function registerIpc() {
       }
     }
     const loginReachable = await services.probeTcp(svc.login_port);
+    const core = services.getCore();
 
     return {
       key_saved: keySaved,
@@ -521,7 +522,11 @@ function registerIpc() {
       phase: svc.phase,
       service_error: svc.error,
       service_error_code: svc.error_code,
-      bridge_running: !!svc.bridge,
+      bridge_running: !!svc.core,
+      engine_state: core.engine,
+      channel_state: core.channels.qq || "offline",
+      core_stats: core.stats,
+      last_turn_error: core.last_turn_error,
       backend_ready: !!svc.backend,
       qq_online: !!(lastQqInfo.uin),
       qq_uin_mask: maskUin(lastQqInfo.uin),
@@ -570,6 +575,8 @@ function registerIpc() {
     try {
       writeKeyLocal(root, trimmed);
       console.log(new Date().toISOString(), "key_saved", posted ? "via_api_and_fs" : "via_fs");
+      // Warm the engine with the new key now instead of on the next message.
+      if (services) services.sendCore({ type: "reload" });
       return { ok: true };
     } catch (e) {
       console.log(
@@ -912,6 +919,7 @@ function registerIpc() {
         fs.writeFileSync(p, "0\n", { encoding: "utf8" });
       }
     }
+    if (services) services.sendCore({ type: "pause", paused: !!paused });
     if (tray && typeof tray._rebuild === "function") tray._rebuild();
     return true;
   });

@@ -20,13 +20,6 @@
     el.className = "badge" + (kind ? " " + kind : "");
   }
 
-  function setCapsule(id, kind, text) {
-    const el = $("#" + id);
-    const textEl = $("#" + id + "-text");
-    if (el) el.className = "capsule" + (kind ? " " + kind : "");
-    if (textEl) textEl.textContent = text;
-  }
-
   function hideAllLoginStates() {
     ["#login-waiting-svc", "#login-qr-wrap", "#login-verify", "#login-success", "#login-error"].forEach(
       (sel) => {
@@ -69,7 +62,113 @@
     refreshStatus();
   }
 
+  let lastStatus = null;
+  let personaCache = { items: [], activePersonaId: "", activeTitle: "" };
+
+  function setStatusChip(id, kind, text) {
+    const el = $("#" + id);
+    const textEl = $("#" + id + "-text");
+    if (el) el.className = "status-chip" + (kind ? " " + kind : "");
+    if (textEl) textEl.textContent = text;
+  }
+
+  function updateTrayLikeCapsule(s) {
+    const cap = $("#status-capsule");
+    if (!cap) return;
+    if (!s) {
+      cap.textContent = "状态未知";
+      return;
+    }
+    if (!s.qq_online) {
+      cap.textContent = "需登录 · Key" + (s.key_saved ? "已配" : "未配");
+      return;
+    }
+    const reply = s.outbound_paused ? "已暂停" : "回复中";
+    const key = s.key_saved ? "Key已配" : "Key未配";
+    const who = s.qq_nick_mask || s.qq_uin_mask || "已登录";
+    cap.textContent = "QQ " + who + " · " + reply + " · " + key;
+  }
+
+  function updateOnboardingBanner(s) {
+    const ban = $("#onboarding-banner");
+    const text = $("#onboarding-banner-text");
+    const go = $("#onboarding-banner-go");
+    if (!ban || !text || !go) return;
+    if (!s || bootPhase !== "main") {
+      ban.classList.add("hidden");
+      return;
+    }
+    let msg = "";
+    let action = null;
+    if (!s.key_saved) {
+      msg = "尚未配置模型 API Key，智能回复不可用。";
+      action = "settings";
+      go.textContent = "去设置";
+    } else if (!s.active_persona_title) {
+      msg = "尚未应用人设，建议先选一条或新建。";
+      action = "persona";
+      go.textContent = "去人设";
+    } else {
+      ban.classList.add("hidden");
+      go.onclick = null;
+      return;
+    }
+    text.textContent = msg;
+    ban.classList.remove("hidden");
+    go.onclick = () => {
+      if (action === "settings") showPage("settings");
+      else if (action === "persona") showPage("persona");
+    };
+  }
+
+  function updateHomeCta(s) {
+    const wrap = $("#home-cta");
+    const btn = $("#btn-home-cta");
+    const pauseBtn = $("#btn-pause-toggle");
+    if (!wrap || !btn) return;
+    let label = "";
+    let action = null;
+    if (!s) {
+      label = "刷新状态";
+      action = "refresh";
+    } else if (!s.settings_reachable || (!s.login_reachable && s.phase !== "starting")) {
+      label = "重新启动本机服务";
+      action = "restart";
+    } else if (!s.qq_online) {
+      label = "去登录 QQ";
+      action = "login";
+    } else if (!s.key_saved) {
+      label = "去填写 Key";
+      action = "settings";
+    } else {
+      wrap.classList.add("hidden");
+      if (pauseBtn) pauseBtn.classList.remove("hidden");
+      btn.onclick = null;
+      return;
+    }
+    wrap.classList.remove("hidden");
+    btn.textContent = label;
+    if (pauseBtn && action !== null) pauseBtn.classList.add("hidden");
+    btn.onclick = () => {
+      if (action === "refresh") refreshStatus();
+      else if (action === "restart") restartServices();
+      else if (action === "login") prepareLogin();
+      else if (action === "settings") showPage("settings");
+    };
+  }
+
+  function syncPauseButton(paused) {
+    const btn = $("#btn-pause-toggle");
+    const box = $("#outbound-paused");
+    if (box && document.activeElement !== box) box.checked = !!paused;
+    if (btn) {
+      btn.textContent = paused ? "恢复出站" : "暂停出站";
+      btn.classList.toggle("is-paused", !!paused);
+    }
+  }
+
   function applyStatus(s) {
+    lastStatus = s;
     const stKey = $("#st-key");
     const stSvc = $("#st-svc");
     const stLogin = $("#st-login");
@@ -78,6 +177,7 @@
     const stOut = $("#st-outbound");
     const stPersona = $("#st-persona");
     const hint = $("#st-hint");
+    const homePersona = $("#home-persona-name");
 
     if (!s) {
       setBadge(stKey, "未知", "warn");
@@ -87,12 +187,15 @@
       setBadge(stQq, "未知", "warn");
       setBadge(stOut, "未知", "warn");
       setBadge(stPersona, "未知", "warn");
-      setCapsule("cap-qq", "warn", "未知");
-      setCapsule("cap-svc", "warn", "未知");
-      setCapsule("cap-reply", "warn", "未知");
+      setStatusChip("chip-qq", "warn", "未知");
+      setStatusChip("chip-reply", "warn", "未知");
+      setStatusChip("chip-key", "warn", "未知");
+      updateTrayLikeCapsule(null);
+      updateOnboardingBanner(null);
+      updateHomeCta(null);
       if (hint) {
         hint.textContent = "无法读取状态。";
-        hint.className = "hint err";
+        hint.className = "hint err selectable";
       }
       return;
     }
@@ -102,17 +205,18 @@
         ? s.qq_nick_mask + "（" + s.qq_uin_mask + "）"
         : s.qq_uin_mask;
       setBadge(stQq, "已登录 " + who, "ok");
-      setCapsule("cap-qq", "ok", who);
+      setStatusChip("chip-qq", "ok", who);
     } else {
       setBadge(stQq, "未登录", "warn");
-      setCapsule("cap-qq", "warn", "未登录");
+      setStatusChip("chip-qq", "warn", "未登录");
     }
 
     setBadge(stKey, s.key_saved ? "已保存（本机）" : "未保存", s.key_saved ? "ok" : "warn");
+    setStatusChip("chip-key", s.key_saved ? "ok" : "warn", s.key_saved ? "已配" : "未配");
     const keyHint = $("#key-mask-hint");
     if (keyHint) {
       keyHint.textContent = s.key_saved ? "当前：已保存到本机（内容已掩码，不会回显）。" : "尚未保存 Key。";
-      keyHint.className = "hint";
+      keyHint.className = "hint selectable";
     }
 
     setBadge(stOut, s.outbound_paused ? "已暂停" : "正常", s.outbound_paused ? "warn" : "ok");
@@ -121,22 +225,22 @@
       s.active_persona_title ? s.active_persona_title : "未设置",
       s.active_persona_title ? "info" : "warn"
     );
+    if (homePersona) homePersona.textContent = s.active_persona_title || "未设置";
 
-    const box = $("#outbound-paused");
-    if (box && document.activeElement !== box) {
-      box.checked = !!s.outbound_paused;
-    }
+    syncPauseButton(!!s.outbound_paused);
 
     const phase = s.phase || "";
     if (phase === "starting") {
       setBadge(stSvc, "启动中…", "info");
       setBadge(stLogin, "启动中…", "info");
       setBadge(stBridge, "启动中…", "info");
-      setCapsule("cap-svc", "info", "启动中…");
-      setCapsule("cap-reply", "info", "启动中…");
+      setStatusChip("chip-reply", "info", "启动中…");
+      updateTrayLikeCapsule(s);
+      updateOnboardingBanner(s);
+      updateHomeCta(s);
       if (hint) {
         hint.textContent = "正在启动本机服务…";
-        hint.className = "hint";
+        hint.className = "hint selectable";
       }
       return;
     }
@@ -149,35 +253,39 @@
       s.bridge_running ? "ok" : phase === "degraded" ? "warn" : "bad"
     );
 
-    setCapsule("cap-svc", s.settings_reachable && s.login_reachable ? "ok" : "bad",
-      s.settings_reachable && s.login_reachable ? "运行中" : "异常");
-    setCapsule(
-      "cap-reply",
-      s.bridge_running ? (s.outbound_paused ? "warn" : "ok") : "bad",
-      s.bridge_running ? (s.outbound_paused ? "已暂停" : "运行中") : "未启动"
-    );
+    if (!s.qq_online) {
+      setStatusChip("chip-reply", "warn", "需登录");
+    } else if (!s.bridge_running) {
+      setStatusChip("chip-reply", "bad", "未启动");
+    } else if (s.outbound_paused) {
+      setStatusChip("chip-reply", "warn", "已暂停");
+    } else {
+      setStatusChip("chip-reply", "ok", "回复中");
+    }
+
+    updateTrayLikeCapsule(s);
+    updateOnboardingBanner(s);
+    updateHomeCta(s);
 
     if (!hint) return;
     if (s.service_error) {
       hint.textContent = s.service_error;
-      hint.className = "hint err";
+      hint.className = "hint err selectable";
     } else if (!s.settings_reachable) {
-      hint.textContent =
-        "本机服务未能启动。请确认安装完整、端口未被占用，然后点「重新启动本机服务」。";
-      hint.className = "hint err";
+      hint.textContent = "本机服务未能启动。可展开下方诊断并点「重新启动本机服务」。";
+      hint.className = "hint err selectable";
     } else if (!s.login_reachable) {
-      hint.textContent =
-        "本机设置服务已就绪，登录服务尚未就绪。请确认已安装官方 QQ，稍后点「刷新状态」。";
-      hint.className = "hint";
+      hint.textContent = "本机设置服务已就绪，登录服务尚未就绪。请确认已安装官方 QQ。";
+      hint.className = "hint selectable";
     } else if (!s.key_saved) {
       hint.textContent = "请到「设置」填写并保存 API Key。";
-      hint.className = "hint";
+      hint.className = "hint selectable";
     } else if (!s.qq_online) {
-      hint.textContent = "就绪。可点「重新登录 QQ」扫码登录。";
-      hint.className = "hint";
+      hint.textContent = "就绪。可点上方「去登录 QQ」扫码登录。";
+      hint.className = "hint selectable";
     } else {
-      hint.textContent = "就绪。";
-      hint.className = "hint ok";
+      hint.textContent = s.outbound_paused ? "出站已暂停，私聊不会自动回复。" : "就绪。";
+      hint.className = "hint selectable" + (s.outbound_paused ? "" : " ok");
     }
   }
 
@@ -212,6 +320,7 @@
     if (name === "persona") loadPersona();
     if (name === "settings") {
       loadAbout();
+      loadAgentEngine();
       refreshStatus();
     }
   }
@@ -502,55 +611,147 @@
     el.className = "hint" + (kind ? " " + kind : "");
   }
 
+  function filterPersonaItems(items, q) {
+    const needle = (q || "").trim().toLowerCase();
+    if (!needle) return items || [];
+    return (items || []).filter((it) => {
+      const hay = ((it.title || "") + " " + (it.summary || "") + " " + (it.body || "")).toLowerCase();
+      return hay.indexOf(needle) >= 0;
+    });
+  }
+
+  function renderPersonaSwitcherList(items, activeId) {
+    const box = $("#persona-switcher-list");
+    if (!box) return;
+    box.innerHTML = "";
+    const q = ($("#persona-switcher-search") && $("#persona-switcher-search").value) || "";
+    const filtered = filterPersonaItems(items, q);
+    if (!filtered.length) {
+      box.innerHTML = '<p class="hint" style="padding:8px 10px">无匹配人设</p>';
+      return;
+    }
+    filtered.forEach((it) => {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "persona-switcher-item" + (it.id === activeId || it.active ? " active" : "");
+      row.setAttribute("role", "option");
+      row.innerHTML =
+        '<span class="psi-title"></span>' +
+        '<span class="psi-summary"></span>' +
+        (it.active || it.id === activeId ? '<span class="badge ok">使用中</span>' : "");
+      row.querySelector(".psi-title").textContent = it.title || "未命名";
+      row.querySelector(".psi-summary").textContent = it.summary || "";
+      row.addEventListener("click", async () => {
+        closePersonaSwitcher();
+        const res = await api.personaApply(it.id);
+        setPersonaMsg(
+          $("#persona-msg"),
+          (res && res.message) || (res && res.ok ? "已应用。" : "应用失败。"),
+          res && res.ok ? "ok" : "err"
+        );
+        await loadPersona();
+        refreshStatus();
+      });
+      box.appendChild(row);
+    });
+  }
+
+  function openPersonaSwitcher() {
+    const panel = $("#persona-switcher-panel");
+    const btn = $("#persona-switcher-btn");
+    if (!panel) return;
+    panel.classList.remove("hidden");
+    if (btn) btn.setAttribute("aria-expanded", "true");
+    renderPersonaSwitcherList(personaCache.items, personaCache.activePersonaId);
+    const search = $("#persona-switcher-search");
+    if (search) {
+      search.value = "";
+      setTimeout(() => search.focus(), 0);
+    }
+  }
+
+  function closePersonaSwitcher() {
+    const panel = $("#persona-switcher-panel");
+    const btn = $("#persona-switcher-btn");
+    if (panel) panel.classList.add("hidden");
+    if (btn) btn.setAttribute("aria-expanded", "false");
+  }
+
   async function loadPersona() {
     showPersonaPanel("list");
     const msg = $("#persona-msg");
     try {
       const r = await api.personaList();
+      personaCache = {
+        items: (r && r.items) || [],
+        activePersonaId: (r && r.activePersonaId) || "",
+        activeTitle: (r && r.activeTitle) || "",
+      };
       const nameEl = $("#persona-current-name");
-      if (nameEl) nameEl.textContent = (r && r.activeTitle) || "—";
-      const box = $("#persona-list");
-      if (!box) return;
-      box.innerHTML = "";
-      const items = (r && r.items) || [];
+      if (nameEl) nameEl.textContent = personaCache.activeTitle || "—";
+      const homePersona = $("#home-persona-name");
+      if (homePersona) homePersona.textContent = personaCache.activeTitle || "未设置";
+
+      const empty = $("#persona-empty");
+      const listBox = $("#persona-list");
+      const toolbar = document.querySelector(".persona-toolbar");
+      const items = personaCache.items;
       if (!items.length) {
-        box.innerHTML = '<p class="hint">暂无人设，请新建或从素材导入。</p>';
+        if (empty) empty.classList.remove("hidden");
+        if (listBox) listBox.innerHTML = "";
+        if (toolbar) toolbar.classList.add("hidden");
+        setPersonaMsg(msg, "", "");
         return;
       }
-      items.forEach((it) => {
-        const row = document.createElement("button");
-        row.type = "button";
-        row.className = "persona-item";
-        row.innerHTML =
-          '<div class="persona-item-main">' +
-          '<p class="persona-item-title"></p>' +
-          '<p class="persona-item-summary"></p>' +
-          "</div>" +
-          '<div class="persona-item-actions">' +
-          (it.active ? '<span class="badge ok">使用中</span>' : '<span class="badge">未使用</span>') +
-          '<button type="button" class="btn-secondary btn-sm persona-apply-btn">应用</button>' +
-          "</div>";
-        row.querySelector(".persona-item-title").textContent = it.title || "未命名";
-        row.querySelector(".persona-item-summary").textContent = it.summary || "";
-        row.addEventListener("click", (e) => {
-          if (e.target && e.target.classList.contains("persona-apply-btn")) return;
-          openPersonaEditor(it.id);
-        });
-        const applyBtn = row.querySelector(".persona-apply-btn");
-        applyBtn.addEventListener("click", async (e) => {
-          e.stopPropagation();
-          const res = await api.personaApply(it.id);
-          setPersonaMsg(msg, (res && res.message) || (res && res.ok ? "已应用。" : "应用失败。"), res && res.ok ? "ok" : "err");
-          await loadPersona();
-          refreshStatus();
-        });
-        if (it.active) applyBtn.disabled = true;
-        box.appendChild(row);
-      });
+      if (empty) empty.classList.add("hidden");
+      if (toolbar) toolbar.classList.remove("hidden");
+      renderPersonaList(items);
       setPersonaMsg(msg, "", "");
     } catch (_) {
       setPersonaMsg(msg, "无法读取人设库。", "err");
     }
+  }
+
+  function renderPersonaList(allItems) {
+    const box = $("#persona-list");
+    if (!box) return;
+    const q = ($("#persona-list-search") && $("#persona-list-search").value) || "";
+    const items = filterPersonaItems(allItems, q);
+    box.innerHTML = "";
+    if (!items.length) {
+      box.innerHTML = '<p class="hint">无匹配人设。</p>';
+      return;
+    }
+    items.forEach((it) => {
+      const row = document.createElement("div");
+      row.className = "persona-item";
+      row.innerHTML =
+        '<button type="button" class="persona-item-main persona-item-open">' +
+        '<p class="persona-item-title"></p>' +
+        '<p class="persona-item-summary"></p>' +
+        "</button>" +
+        '<div class="persona-item-actions">' +
+        (it.active ? '<span class="badge ok">使用中</span>' : '<span class="badge">未使用</span>') +
+        '<button type="button" class="btn-secondary btn-sm persona-apply-btn">应用</button>' +
+        "</div>";
+      row.querySelector(".persona-item-title").textContent = it.title || "未命名";
+      row.querySelector(".persona-item-summary").textContent = it.summary || "";
+      row.querySelector(".persona-item-open").addEventListener("click", () => openPersonaEditor(it.id));
+      const applyBtn = row.querySelector(".persona-apply-btn");
+      applyBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const res = await api.personaApply(it.id);
+        setPersonaMsg(
+          $("#persona-msg"),
+          (res && res.message) || (res && res.ok ? "已应用。" : "应用失败。"),
+          res && res.ok ? "ok" : "err"
+        );
+        await loadPersona();
+        refreshStatus();
+      });
+      if (it.active) applyBtn.disabled = true;
+      box.appendChild(row);
+    });
   }
 
   async function openPersonaEditor(id, draft) {
@@ -698,20 +899,73 @@
   function wirePersona() {
     const n = $("#btn-persona-new");
     const i = $("#btn-persona-import");
+    const n2 = $("#btn-persona-empty-new");
+    const i2 = $("#btn-persona-empty-import");
     const back = $("#btn-persona-back");
     const save = $("#btn-persona-save");
     const apply = $("#btn-persona-apply");
     const del = $("#btn-persona-delete");
     const cancelImp = $("#btn-import-cancel");
     const goImp = $("#btn-import-go");
-    if (n) n.addEventListener("click", () => openPersonaEditor(null));
-    if (i) i.addEventListener("click", () => showPersonaPanel("import"));
+    const openNew = () => openPersonaEditor(null);
+    const openImp = () => showPersonaPanel("import");
+    if (n) n.addEventListener("click", openNew);
+    if (i) i.addEventListener("click", openImp);
+    if (n2) n2.addEventListener("click", openNew);
+    if (i2) i2.addEventListener("click", openImp);
     if (back) back.addEventListener("click", () => loadPersona());
     if (save) save.addEventListener("click", () => savePersonaEditor());
     if (apply) apply.addEventListener("click", () => applyPersonaEditor());
     if (del) del.addEventListener("click", () => deletePersonaEditor());
     if (cancelImp) cancelImp.addEventListener("click", () => loadPersona());
     if (goImp) goImp.addEventListener("click", () => runImportDraft());
+
+    const swBtn = $("#persona-switcher-btn");
+    if (swBtn) {
+      swBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const panel = $("#persona-switcher-panel");
+        if (panel && panel.classList.contains("hidden")) openPersonaSwitcher();
+        else closePersonaSwitcher();
+      });
+    }
+    const swSearch = $("#persona-switcher-search");
+    if (swSearch) {
+      swSearch.addEventListener("input", () =>
+        renderPersonaSwitcherList(personaCache.items, personaCache.activePersonaId)
+      );
+      swSearch.addEventListener("keydown", async (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          const filtered = filterPersonaItems(
+            personaCache.items,
+            swSearch.value
+          );
+          if (filtered.length === 1) {
+            closePersonaSwitcher();
+            const res = await api.personaApply(filtered[0].id);
+            setPersonaMsg(
+              $("#persona-msg"),
+              (res && res.message) || (res && res.ok ? "已应用。" : "应用失败。"),
+              res && res.ok ? "ok" : "err"
+            );
+            await loadPersona();
+            refreshStatus();
+          }
+        } else if (e.key === "Escape") {
+          closePersonaSwitcher();
+        }
+      });
+    }
+    const listSearch = $("#persona-list-search");
+    if (listSearch) {
+      listSearch.addEventListener("input", () => renderPersonaList(personaCache.items));
+    }
+    document.addEventListener("click", (e) => {
+      const sw = $("#persona-switcher");
+      if (!sw) return;
+      if (!sw.contains(e.target)) closePersonaSwitcher();
+    });
   }
 
 
@@ -785,12 +1039,25 @@
     if (outboundWired) return;
     outboundWired = true;
     const box = $("#outbound-paused");
-    box.addEventListener("change", async () => {
+    const toggle = async (paused) => {
       try {
-        await api.setOutboundPaused(!!box.checked);
+        await api.setOutboundPaused(!!paused);
+        syncPauseButton(!!paused);
         refreshStatus();
       } catch (_) {}
-    });
+    };
+    if (box) {
+      box.addEventListener("change", async () => {
+        await toggle(!!box.checked);
+      });
+    }
+    const btn = $("#btn-pause-toggle");
+    if (btn) {
+      btn.addEventListener("click", async () => {
+        const next = !(lastStatus && lastStatus.outbound_paused);
+        await toggle(next);
+      });
+    }
   }
 
   function wireWindowControls() {
@@ -806,16 +1073,50 @@
     $$(".nav-btn").forEach((btn) => {
       btn.addEventListener("click", () => showPage(btn.dataset.page));
     });
-    $("#btn-refresh").addEventListener("click", () => refreshStatus());
-    $("#btn-restart").addEventListener("click", () => restartServices());
-    $("#btn-relogin").addEventListener("click", () => prepareLogin());
-    $("#btn-save-key").addEventListener("click", () => saveKey());
+    const br = $("#btn-refresh");
+    const bs = $("#btn-restart");
+    const bl = $("#btn-relogin");
+    const bk = $("#btn-save-key");
+    if (br) br.addEventListener("click", () => refreshStatus());
+    if (bs) bs.addEventListener("click", () => restartServices());
+    if (bl) bl.addEventListener("click", () => prepareLogin());
+    if (bk) bk.addEventListener("click", () => saveKey());
+    const gp = $("#btn-goto-persona");
+    if (gp) gp.addEventListener("click", () => showPage("persona"));
+    const chipQq = $("#chip-qq");
+    const chipReply = $("#chip-reply");
+    const chipKey = $("#chip-key");
+    if (chipQq) chipQq.addEventListener("click", () => {
+      if (lastStatus && lastStatus.qq_online) return;
+      prepareLogin();
+    });
+    if (chipReply) chipReply.addEventListener("click", async () => {
+      if (!(lastStatus && lastStatus.qq_online)) {
+        prepareLogin();
+        return;
+      }
+      const next = !(lastStatus && lastStatus.outbound_paused);
+      try {
+        await api.setOutboundPaused(!!next);
+        refreshStatus();
+      } catch (_) {}
+    });
+    if (chipKey) chipKey.addEventListener("click", () => showPage("settings"));
+    const ae = $("#agent-engine-enabled");
+    if (ae) {
+      ae.addEventListener("change", () => setAgentEngine(!!ae.checked));
+    }
     wirePersona();
-    $("#btn-refresh-qr").addEventListener("click", () => refreshQr());
-    $("#btn-retry-login").addEventListener("click", () => prepareLogin());
-    $("#btn-login-continue").addEventListener("click", () => afterLoginContinue());
-    $("#btn-first-save").addEventListener("click", () => saveFirstSetup(false));
-    $("#btn-first-skip").addEventListener("click", () => saveFirstSetup(true));
+    const bqr = $("#btn-refresh-qr");
+    const brl = $("#btn-retry-login");
+    const blc = $("#btn-login-continue");
+    const bfs = $("#btn-first-save");
+    const bfsk = $("#btn-first-skip");
+    if (bqr) bqr.addEventListener("click", () => refreshQr());
+    if (brl) brl.addEventListener("click", () => prepareLogin());
+    if (blc) blc.addEventListener("click", () => afterLoginContinue());
+    if (bfs) bfs.addEventListener("click", () => saveFirstSetup(false));
+    if (bfsk) bfsk.addEventListener("click", () => saveFirstSetup(true));
     wireOutbound();
     wireWindowControls();
   }

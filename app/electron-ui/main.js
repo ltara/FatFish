@@ -289,12 +289,30 @@ function createTray() {
   tray.setToolTip("肥鱼");
   const rebuild = () => {
     let paused = false;
+    let loggedIn = false;
     try {
       const root = resolveAppDataRoot();
       const p = outboundPausedPath(root);
       paused = fs.existsSync(p) && fs.readFileSync(p, "utf8").trim() === "1";
+      loggedIn = !!(lastQqInfo && lastQqInfo.uin);
     } catch {
       paused = false;
+      loggedIn = false;
+    }
+    // 与首页胶囊一致：在线 / 已暂停 / 需登录
+    let tip = "肥鱼 · 需登录";
+    let statusLabel = "状态：需登录";
+    if (loggedIn && paused) {
+      tip = "肥鱼 · 已暂停";
+      statusLabel = "状态：已暂停";
+    } else if (loggedIn) {
+      tip = "肥鱼 · 在线";
+      statusLabel = "状态：在线";
+    }
+    try {
+      tray.setToolTip(tip);
+    } catch {
+      /* ignore */
     }
     const menu = Menu.buildFromTemplate([
       {
@@ -302,7 +320,12 @@ function createTray() {
         click: () => showMainWindow(),
       },
       {
-        label: paused ? "恢复出站回复" : "暂停出站回复",
+        label: statusLabel,
+        enabled: false,
+      },
+      {
+        label: paused ? "恢复出站" : "暂停出站",
+        enabled: loggedIn,
         click: async () => {
           const root = resolveAppDataRoot();
           const runtime = path.join(root, "runtime");
@@ -543,6 +566,7 @@ function registerIpc() {
     if (session.credential) loginCredential = session.credential;
     if (session.phase === "success" && session.uin) {
       lastQqInfo = { uin: session.uin, nick: session.nick };
+      if (tray && typeof tray._rebuild === "function") tray._rebuild();
     }
     if (session.isLogin || session.phase === "success") {
       maybeEnsureWsBridge(loginCredential || session.credential);
@@ -577,6 +601,7 @@ function registerIpc() {
     });
     if (result.phase === "success" && result.uin) {
       lastQqInfo = { uin: result.uin, nick: result.nick };
+      if (tray && typeof tray._rebuild === "function") tray._rebuild();
     }
     if (result.isLogin || result.phase === "success") {
       maybeEnsureWsBridge(loginCredential);

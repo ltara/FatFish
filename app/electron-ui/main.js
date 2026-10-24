@@ -666,7 +666,6 @@ function registerIpc() {
     return {
       name: "肥鱼",
       version,
-      price: "¥99",
       agent_engine_enabled: !!ae.enabled,
       agent_engine_sidecar: !!sidecar,
       // About line only when the experimental switch exists

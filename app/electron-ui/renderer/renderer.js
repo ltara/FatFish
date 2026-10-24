@@ -68,7 +68,10 @@
   function setStatusChip(id, kind, text) {
     const el = $("#" + id);
     const textEl = $("#" + id + "-text");
-    if (el) el.className = "status-chip" + (kind ? " " + kind : "");
+    if (el) {
+      const base = id === "chip-qq" ? "home-object" : "status-meter";
+      el.className = base + (kind ? " " + kind : "");
+    }
     if (textEl) textEl.textContent = text;
   }
 
@@ -202,7 +205,7 @@
 
     if (s.qq_online && s.qq_uin_mask) {
       const who = s.qq_nick_mask
-        ? s.qq_nick_mask + "（" + s.qq_uin_mask + "）"
+        ? s.qq_nick_mask + " · " + s.qq_uin_mask
         : s.qq_uin_mask;
       setBadge(stQq, "已登录 " + who, "ok");
       setStatusChip("chip-qq", "ok", who);
@@ -215,7 +218,7 @@
     setStatusChip("chip-key", s.key_saved ? "ok" : "warn", s.key_saved ? "已配" : "未配");
     const keyHint = $("#key-mask-hint");
     if (keyHint) {
-      keyHint.textContent = s.key_saved ? "当前：已保存到本机（内容已掩码，不会回显）。" : "尚未保存 Key。";
+      keyHint.textContent = s.key_saved ? "已保存到本机（不回显）。" : "尚未保存 Key。";
       keyHint.className = "hint selectable";
     }
 
@@ -281,11 +284,15 @@
       hint.textContent = "请到「设置」填写并保存 API Key。";
       hint.className = "hint selectable";
     } else if (!s.qq_online) {
-      hint.textContent = "就绪。可点上方「去登录 QQ」扫码登录。";
+      hint.textContent = "可点上方账号行或「重新登录 QQ」扫码。";
+      hint.className = "hint selectable";
+    } else if (s.outbound_paused) {
+      hint.textContent = "出站已暂停，私聊不会自动回复。";
       hint.className = "hint selectable";
     } else {
-      hint.textContent = s.outbound_paused ? "出站已暂停，私聊不会自动回复。" : "就绪。";
-      hint.className = "hint selectable" + (s.outbound_paused ? "" : " ok");
+      // 就绪并入仪器行绿点，不再另起绿字
+      hint.textContent = "";
+      hint.className = "hint selectable home-hint";
     }
   }
 
@@ -620,61 +627,29 @@
     });
   }
 
-  function renderPersonaSwitcherList(items, activeId) {
-    const box = $("#persona-switcher-list");
+  function locateActivePersonaInList() {
+    const activeId = personaCache.activePersonaId;
+    if (!activeId) return;
+    const box = $("#persona-list");
     if (!box) return;
-    box.innerHTML = "";
-    const q = ($("#persona-switcher-search") && $("#persona-switcher-search").value) || "";
-    const filtered = filterPersonaItems(items, q);
-    if (!filtered.length) {
-      box.innerHTML = '<p class="hint" style="padding:8px 10px">无匹配人设</p>';
+    const row = box.querySelector('[data-persona-id="' + activeId + '"]');
+    if (!row) return;
+    row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    row.classList.add("flash-locate");
+    setTimeout(() => row.classList.remove("flash-locate"), 1200);
+  }
+
+  function toastPersonaApplied(ok, fallback) {
+    const msg = $("#persona-msg");
+    if (!ok) {
+      setPersonaMsg(msg, fallback || "应用失败。", "err");
       return;
     }
-    filtered.forEach((it) => {
-      const row = document.createElement("button");
-      row.type = "button";
-      row.className = "persona-switcher-item" + (it.id === activeId || it.active ? " active" : "");
-      row.setAttribute("role", "option");
-      row.innerHTML =
-        '<span class="psi-title"></span>' +
-        '<span class="psi-summary"></span>' +
-        (it.active || it.id === activeId ? '<span class="badge ok">使用中</span>' : "");
-      row.querySelector(".psi-title").textContent = it.title || "未命名";
-      row.querySelector(".psi-summary").textContent = it.summary || "";
-      row.addEventListener("click", async () => {
-        closePersonaSwitcher();
-        const res = await api.personaApply(it.id);
-        setPersonaMsg(
-          $("#persona-msg"),
-          (res && res.message) || (res && res.ok ? "已应用。" : "应用失败。"),
-          res && res.ok ? "ok" : "err"
-        );
-        await loadPersona();
-        refreshStatus();
-      });
-      box.appendChild(row);
-    });
-  }
-
-  function openPersonaSwitcher() {
-    const panel = $("#persona-switcher-panel");
-    const btn = $("#persona-switcher-btn");
-    if (!panel) return;
-    panel.classList.remove("hidden");
-    if (btn) btn.setAttribute("aria-expanded", "true");
-    renderPersonaSwitcherList(personaCache.items, personaCache.activePersonaId);
-    const search = $("#persona-switcher-search");
-    if (search) {
-      search.value = "";
-      setTimeout(() => search.focus(), 0);
-    }
-  }
-
-  function closePersonaSwitcher() {
-    const panel = $("#persona-switcher-panel");
-    const btn = $("#persona-switcher-btn");
-    if (panel) panel.classList.add("hidden");
-    if (btn) btn.setAttribute("aria-expanded", "false");
+    setPersonaMsg(
+      msg,
+      (fallback || "已应用。") + " 下一句私聊起生效（对话记忆会重置）。",
+      "ok"
+    );
   }
 
   async function loadPersona() {
@@ -725,6 +700,8 @@
     items.forEach((it) => {
       const row = document.createElement("div");
       row.className = "persona-item";
+      row.setAttribute("data-persona-id", it.id || "");
+      const actionLabel = it.active ? "编辑" : "应用";
       row.innerHTML =
         '<button type="button" class="persona-item-main persona-item-open">' +
         '<p class="persona-item-title"></p>' +
@@ -732,24 +709,27 @@
         "</button>" +
         '<div class="persona-item-actions">' +
         (it.active ? '<span class="badge ok">使用中</span>' : '<span class="badge">未使用</span>') +
-        '<button type="button" class="btn-secondary btn-sm persona-apply-btn">应用</button>' +
+        '<button type="button" class="btn-secondary btn-sm persona-apply-btn"></button>' +
         "</div>";
       row.querySelector(".persona-item-title").textContent = it.title || "未命名";
       row.querySelector(".persona-item-summary").textContent = it.summary || "";
       row.querySelector(".persona-item-open").addEventListener("click", () => openPersonaEditor(it.id));
       const applyBtn = row.querySelector(".persona-apply-btn");
+      applyBtn.textContent = actionLabel;
       applyBtn.addEventListener("click", async (e) => {
         e.stopPropagation();
+        if (it.active) {
+          openPersonaEditor(it.id);
+          return;
+        }
         const res = await api.personaApply(it.id);
-        setPersonaMsg(
-          $("#persona-msg"),
-          (res && res.message) || (res && res.ok ? "已应用。" : "应用失败。"),
-          res && res.ok ? "ok" : "err"
+        toastPersonaApplied(
+          !!(res && res.ok),
+          (res && res.message) || (res && res.ok ? "已应用。" : "应用失败。")
         );
         await loadPersona();
         refreshStatus();
       });
-      if (it.active) applyBtn.disabled = true;
       box.appendChild(row);
     });
   }
@@ -845,11 +825,15 @@
         $("#persona-edit-id").value = id;
       }
       const r = await api.personaApply(id);
-      setPersonaMsg(
-        msg,
-        (r && r.message) || (r && r.ok ? "已应用。" : "应用失败。"),
-        r && r.ok ? "ok" : "err"
-      );
+      if (r && r.ok) {
+        setPersonaMsg(
+          msg,
+          ((r && r.message) || "已应用。") + " 下一句私聊起生效（对话记忆会重置）。",
+          "ok"
+        );
+      } else {
+        setPersonaMsg(msg, (r && r.message) || "应用失败。", "err");
+      }
       refreshStatus();
     } catch (_) {
       setPersonaMsg(msg, "应用失败。", "err");
@@ -920,52 +904,17 @@
     if (cancelImp) cancelImp.addEventListener("click", () => loadPersona());
     if (goImp) goImp.addEventListener("click", () => runImportDraft());
 
-    const swBtn = $("#persona-switcher-btn");
-    if (swBtn) {
-      swBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const panel = $("#persona-switcher-panel");
-        if (panel && panel.classList.contains("hidden")) openPersonaSwitcher();
-        else closePersonaSwitcher();
-      });
-    }
-    const swSearch = $("#persona-switcher-search");
-    if (swSearch) {
-      swSearch.addEventListener("input", () =>
-        renderPersonaSwitcherList(personaCache.items, personaCache.activePersonaId)
-      );
-      swSearch.addEventListener("keydown", async (e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          const filtered = filterPersonaItems(
-            personaCache.items,
-            swSearch.value
-          );
-          if (filtered.length === 1) {
-            closePersonaSwitcher();
-            const res = await api.personaApply(filtered[0].id);
-            setPersonaMsg(
-              $("#persona-msg"),
-              (res && res.message) || (res && res.ok ? "已应用。" : "应用失败。"),
-              res && res.ok ? "ok" : "err"
-            );
-            await loadPersona();
-            refreshStatus();
-          }
-        } else if (e.key === "Escape") {
-          closePersonaSwitcher();
-        }
+    const locateBtn = $("#persona-locate-btn");
+    if (locateBtn) {
+      locateBtn.addEventListener("click", () => {
+        showPersonaPanel("list");
+        locateActivePersonaInList();
       });
     }
     const listSearch = $("#persona-list-search");
     if (listSearch) {
       listSearch.addEventListener("input", () => renderPersonaList(personaCache.items));
     }
-    document.addEventListener("click", (e) => {
-      const sw = $("#persona-switcher");
-      if (!sw) return;
-      if (!sw.contains(e.target)) closePersonaSwitcher();
-    });
   }
 
 
@@ -1082,7 +1031,10 @@
     if (bl) bl.addEventListener("click", () => prepareLogin());
     if (bk) bk.addEventListener("click", () => saveKey());
     const gp = $("#btn-goto-persona");
-    if (gp) gp.addEventListener("click", () => showPage("persona"));
+    if (gp) gp.addEventListener("click", () => {
+      showPage("persona");
+      setTimeout(() => locateActivePersonaInList(), 50);
+    });
     const chipQq = $("#chip-qq");
     const chipReply = $("#chip-reply");
     const chipKey = $("#chip-key");

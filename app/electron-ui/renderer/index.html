@@ -134,7 +134,6 @@
         <section id="page-home" class="page active">
           <header class="page-head">
             <h2>首页</h2>
-            <p class="page-sub">本机服务由客户端自动启停，数据不出本机。</p>
           </header>
 
           <div id="onboarding-banner" class="onboard-banner hidden" role="status">
@@ -142,37 +141,42 @@
             <button type="button" id="onboarding-banner-go" class="btn-secondary btn-sm">去处理</button>
           </div>
 
-          <div class="status-bar" id="status-bar" aria-live="polite">
-            <button type="button" class="status-chip" id="chip-qq" data-action="login" title="点击管理登录">
-              <span class="dot"></span><span class="chip-label">QQ</span> <strong id="chip-qq-text">检测中…</strong>
+          <!-- 对象行：脱敏 QQ + 主按钮贴紧 -->
+          <div class="home-object-row" id="home-object-row">
+            <button type="button" class="home-object" id="chip-qq" data-action="login" title="点击管理登录">
+              <span class="dot" id="chip-qq-dot"></span>
+              <span class="home-object-text" id="chip-qq-text">检测中…</span>
             </button>
-            <button type="button" class="status-chip" id="chip-reply" data-action="pause" title="点击暂停/恢复">
-              <span class="dot"></span><span class="chip-label">回复</span> <strong id="chip-reply-text">检测中…</strong>
+            <div class="home-primary">
+              <button type="button" id="btn-pause-toggle" class="btn-primary btn-pause">暂停出站</button>
+              <input type="checkbox" id="outbound-paused" class="hidden" tabindex="-1" aria-hidden="true" />
+            </div>
+          </div>
+
+          <!-- 仪器行：单行点+短词（回复 / Key） -->
+          <div class="status-instrument" id="status-bar" aria-live="polite">
+            <button type="button" class="status-meter" id="chip-reply" data-action="pause" title="点击暂停/恢复">
+              <span class="dot"></span><strong id="chip-reply-text">检测中…</strong>
             </button>
-            <button type="button" class="status-chip" id="chip-key" data-action="settings" title="点击前往设置">
+            <span class="status-sep" aria-hidden="true">·</span>
+            <button type="button" class="status-meter" id="chip-key" data-action="settings" title="点击前往设置">
               <span class="dot"></span><span class="chip-label">Key</span> <strong id="chip-key-text">检测中…</strong>
             </button>
           </div>
 
           <p id="status-capsule" class="status-capsule selectable hidden" aria-live="polite" hidden>检测中…</p>
-
-          <div class="home-primary">
-            <button type="button" id="btn-pause-toggle" class="btn-primary btn-pause">暂停出站</button>
-            <input type="checkbox" id="outbound-paused" class="hidden" tabindex="-1" aria-hidden="true" />
-          </div>
-
-          <p id="st-hint" class="hint selectable"></p>
+          <p id="st-hint" class="hint selectable home-hint"></p>
           <div id="home-cta" class="home-cta hidden">
             <button type="button" id="btn-home-cta" class="btn-primary">去处理</button>
           </div>
 
           <div class="home-links btn-row">
             <button type="button" id="btn-relogin" class="btn-ghost linkish">重新登录 QQ</button>
-            <button type="button" id="btn-goto-persona" class="btn-ghost linkish">当前人设：<span id="home-persona-name">—</span></button>
+            <button type="button" id="btn-goto-persona" class="btn-secondary btn-sm home-persona-chip">当前人设：<span id="home-persona-name">—</span></button>
           </div>
 
           <details class="diag-fold" id="diag-fold">
-            <summary>诊断（可选）</summary>
+            <summary class="diag-summary-link">诊断</summary>
             <div class="card status-card diag-card">
               <ul class="status-list">
                 <li><span class="label">本机服务</span><span id="st-svc" class="badge selectable">检测中…</span></li>
@@ -195,21 +199,12 @@
           <header class="page-head persona-head">
             <div>
               <h2>人设库</h2>
-              <p class="page-sub">查看、添加、修改并一键应用。全部保存在本机，不联网。</p>
+              <p class="page-sub">本机保存，应用后下一句私聊起生效。</p>
             </div>
-            <div class="persona-switcher" id="persona-switcher">
-              <button type="button" class="persona-switcher-btn" id="persona-switcher-btn" aria-haspopup="listbox" aria-expanded="false">
-                当前：<strong id="persona-current-name">—</strong>
-                <span class="caret" aria-hidden="true">▾</span>
-              </button>
-              <div class="persona-switcher-panel hidden" id="persona-switcher-panel" role="listbox">
-                <input type="search" id="persona-switcher-search" class="persona-search" placeholder="搜索人设…" autocomplete="off" />
-                <div id="persona-switcher-list" class="persona-switcher-list"></div>
-              </div>
-            </div>
+            <button type="button" class="persona-current-chip" id="persona-locate-btn" title="在列表中定位当前人设">
+              当前：<strong id="persona-current-name">—</strong>
+            </button>
           </header>
-
-          <p class="hint" style="margin:0 0 12px">应用后下一句私聊起按新人设回复（对话记忆会重置）。</p>
 
           <div id="persona-list-view">
             <div class="persona-toolbar">
@@ -276,19 +271,19 @@
         <section id="page-settings" class="page">
           <header class="page-head">
             <h2>设置</h2>
-            <p class="page-sub">密钥与权限仅保存在本机。保存后不会回显完整内容。</p>
+            <p class="page-sub">密钥与权限仅保存在本机。</p>
           </header>
 
-          <div class="settings-block" id="settings-model">
+          <div class="settings-block settings-card" id="settings-model">
             <h3 class="settings-block-title">模型与 Key</h3>
             <label class="field">
               <span class="field-label">模型 API Key</span>
-              <input type="password" id="api-key" autocomplete="off" placeholder="sk-…" />
+              <div class="key-row">
+                <input type="password" id="api-key" autocomplete="off" placeholder="sk-…" />
+                <button type="button" id="btn-save-key" class="btn-primary">保存到本机</button>
+              </div>
             </label>
-            <p id="key-mask-hint" class="hint selectable" style="margin-top:-8px"></p>
-            <div class="btn-row">
-              <button type="button" id="btn-save-key" class="btn-primary">保存到本机</button>
-            </div>
+            <p id="key-mask-hint" class="hint selectable"></p>
             <p id="settings-msg" class="hint selectable"></p>
           </div>
 
@@ -307,7 +302,11 @@
 
           <div class="settings-block" id="settings-risk">
             <h3 class="settings-block-title">风险与隐私</h3>
-            <p class="hint">请仅使用专用小号登录 QQ。Key 与对话数据默认保存在本机，不提供云端代管。出站暂停后收到私聊不会自动回复。</p>
+            <ul class="risk-bullets hint">
+              <li>请仅使用专用小号登录 QQ</li>
+              <li>Key 与对话默认保存在本机，无云端代管</li>
+              <li>出站暂停后，收到私聊不会自动回复</li>
+            </ul>
           </div>
 
           <div class="settings-block about-block" id="settings-about">

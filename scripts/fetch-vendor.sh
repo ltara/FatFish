@@ -42,7 +42,7 @@ rm -rf "${NAPCAT_DIR:?}/"*
 unzip -q -o "$NAPCAT_ZIP" -d "$NAPCAT_DIR"
 echo "[fetch] napcat extracted → $NAPCAT_DIR (sha256=$NAPCAT_SHA)"
 # Win cmd 秒退若 .bat 为 LF；解压后强制 CRLF（Linux 打包链路必做）
-bash "$ROOT/scripts/ensure-crlf.sh" "$NAPCAT_DIR"
+node "$ROOT/scripts/ensure-crlf.js" "$NAPCAT_DIR"
 
 # --- Portable Node Win x64 ---
 NODE_ZIP="$VENDOR/$NODE_ASSET"

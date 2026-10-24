@@ -11,7 +11,7 @@
     "smoke": "node scripts/smoke-main.js",
     "dist": "npm run ensure-crlf && electron-builder --win nsis",
     "pack": "npm run ensure-crlf && electron-builder --dir",
-    "ensure-crlf": "node ../../scripts/ensure-crlf-node.js"
+    "ensure-crlf": "node ../../scripts/ensure-crlf.js"
   },
   "engines": {
     "node": ">=20"
@@ -49,13 +49,6 @@
         "filter": [
           "local-server.mjs",
           "package.json"
-        ]
-      },
-      {
-        "from": "../web",
-        "to": "web",
-        "filter": [
-          "**/*"
         ]
       },
       {

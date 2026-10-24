@@ -14,12 +14,10 @@
 
 ## 桌面壳（Electron — 正式 UI）
 
-> **Tauri 主路径已搁置。** 正式 UI：`app/electron-ui/`（单窗口：状态 / 设置 / 登录）。详见 `docs/ELECTRON.md`。  
-> `app/tauri-ui/` / `docs/TAURI.md` 保留归档（SHELVED）。
+> 正式 UI：`app/electron-ui/`（单窗口：状态 / 设置 / 登录）。详见 `docs/ELECTRON.md`。
 
 - 对外窗口标题：「肥鱼」
 - 登录：应用内 `<webview>` 内嵌；禁止系统浏览器 / `shell.openExternal`
-- `FatFishTray.ps1`：DEPRECATED（曾用浏览器打开设置/登录）；正式入口为 Electron exe（打包后置）
 
 ## 端口约定（仅 127.0.0.1）
 
@@ -70,12 +68,11 @@ cd app/bridge && npm install && npm start
 
 ## 打包流水线
 
-见 `docs/WIN_BUILD.md`：
+见 `docs/ELECTRON.md`：
 
 1. `scripts/fetch-vendor.ps1`（或 `.sh`）
 2. `cd app/bridge && npm install`
-3. `packaging/assemble.ps1` → `dist/FatFish/`
-4. `installer/build.ps1` → `installer/Output/FatFish-Setup.exe`（需 Inno Setup 6，**须在 Windows 上执行**）
+3. `cd app/electron-ui && npm run dist` → `dist/FatFish-Setup-<ver>.exe`（**须在 Windows 上执行**）
 
 ## 与 MVP 关系
 

@@ -11,9 +11,7 @@ logs/
 # build outputs
 dist/
 out/
-installer/Output/
 *.exe
-!installer/*.iss
 
 # vendor binaries (download at build time; keep MANIFEST.txt)
 vendor/napcat/
@@ -26,11 +24,6 @@ vendor/*.7z
 node_modules/
 app/bridge/node_modules/
 app/shell/node_modules/
-
-# tauri
-app/tauri-ui/node_modules/
-app/tauri-ui/src-tauri/target/
-app/tauri-ui/dist/
 
 # electron
 app/electron-ui/node_modules/

@@ -35,7 +35,7 @@ if (Test-Path $NapcatDir) { Get-ChildItem $NapcatDir | Remove-Item -Recurse -For
 Expand-Archive -Path $NapcatZip -DestinationPath $NapcatDir -Force
 Write-Host "[fetch] napcat → $NapcatDir sha256=$NapcatSha"
 # Win cmd dies on LF .bat; normalize after extract
-& (Join-Path $PSScriptRoot "ensure-crlf.ps1") $NapcatDir
+node (Join-Path $PSScriptRoot "ensure-crlf.js") $NapcatDir
 
 # --- Node ---
 $NodeZip = Join-Path $Vendor $NodeAsset

@@ -2,7 +2,6 @@
 
 目标平台：**Windows 10/11**（Win-only）。箱上 Linux 仅用于 `npm install` / 语法与 smoke；GUI 与后台启动器须在 Windows 跑。
 
-> **Tauri 主路径已搁置。** 正式 UI 为 Electron（`app/electron-ui/`）。`app/tauri-ui/` 保留不删，见 `docs/TAURI.md`。
 
 ## 目录
 
@@ -44,7 +43,7 @@ app/electron-ui/
 | 后台 | `vendor/napcat/` | `resources/vendor/napcat/` |
 | Node 便携 | `vendor/node/`（可选回退） | `resources/vendor/node/` |
 
-`package.json` → `build.extraResources` 已包含：`bridge/`、`shell/`、`web/`、`vendor/napcat`、`vendor/node`。体积大属预期（后台组件 + 便携 Node）。
+`package.json` → `build.extraResources` 已包含：`bridge/`、`shell/`、`vendor/napcat`、`vendor/node`。体积大属预期（后台组件 + 便携 Node）。
 
 ## Windows 开发
 
@@ -101,4 +100,4 @@ npm run dist
 
 ## 与托盘脚本关系
 
-`app/shell/FatFishTray.ps1` 保持 **DEPRECATED**。启停已由 Electron 主进程接管；系统托盘菜单仍为后置里程碑。
+启停已由 Electron 主进程接管；系统托盘菜单仍为后置里程碑。

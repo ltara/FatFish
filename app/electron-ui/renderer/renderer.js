@@ -639,20 +639,22 @@
     setTimeout(() => row.classList.remove("flash-locate"), 1200);
   }
 
-  function toastPersonaApplied(ok, fallback) {
+  function toastPersonaApplied(ok, message) {
     const msg = $("#persona-msg");
     if (!ok) {
-      setPersonaMsg(msg, fallback || "应用失败。", "err");
+      setPersonaMsg(msg, message || "应用失败。", "err");
       return;
     }
+    // persona-lib 已含「已应用「名字」」+ 记忆重置；勿再拼「会重置」
     setPersonaMsg(
       msg,
-      (fallback || "已应用。") + " 下一句私聊起生效（对话记忆会重置）。",
+      message || "已应用。下一句私聊起按新人设回复（对话记忆已重置）。",
       "ok"
     );
   }
 
-  async function loadPersona() {
+  async function loadPersona(opts) {
+    const preserveMsg = !!(opts && opts.preserveMsg);
     showPersonaPanel("list");
     const msg = $("#persona-msg");
     try {
@@ -675,13 +677,13 @@
         if (empty) empty.classList.remove("hidden");
         if (listBox) listBox.innerHTML = "";
         if (toolbar) toolbar.classList.add("hidden");
-        setPersonaMsg(msg, "", "");
+        if (!preserveMsg) setPersonaMsg(msg, "", "");
         return;
       }
       if (empty) empty.classList.add("hidden");
       if (toolbar) toolbar.classList.remove("hidden");
       renderPersonaList(items);
-      setPersonaMsg(msg, "", "");
+      if (!preserveMsg) setPersonaMsg(msg, "", "");
     } catch (_) {
       setPersonaMsg(msg, "无法读取人设库。", "err");
     }
@@ -723,11 +725,11 @@
           return;
         }
         const res = await api.personaApply(it.id);
+        await loadPersona({ preserveMsg: true });
         toastPersonaApplied(
           !!(res && res.ok),
-          (res && res.message) || (res && res.ok ? "已应用。" : "应用失败。")
+          (res && res.message) || (res && res.ok ? "已应用。下一句私聊起按新人设回复（对话记忆已重置）。" : "应用失败。")
         );
-        await loadPersona();
         refreshStatus();
       });
       box.appendChild(row);
@@ -828,7 +830,7 @@
       if (r && r.ok) {
         setPersonaMsg(
           msg,
-          ((r && r.message) || "已应用。") + " 下一句私聊起生效（对话记忆会重置）。",
+          (r && r.message) || "已应用。下一句私聊起按新人设回复（对话记忆已重置）。",
           "ok"
         );
       } else {

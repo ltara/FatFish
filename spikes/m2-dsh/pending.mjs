@@ -1,5 +1,5 @@
 // Boot the profile once and print entries that did not activate (dependency debugging).
-import { DshClient } from "./dsh-client.mjs";
+import { DshClient } from "../../app/core/dsh-client.mjs";
 
 const c = new DshClient({
   exe: process.env.DSH_EXE,

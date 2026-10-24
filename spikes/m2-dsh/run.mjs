@@ -9,7 +9,7 @@ import https from "node:https";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, appendFileSync, existsSync, writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { DshClient, assistantText } from "./dsh-client.mjs";
+import { DshClient, assistantText } from "../../app/core/dsh-client.mjs";
 
 const scenario = process.argv[2] || "boot";
 const profile = process.argv[3] || "fatfish";

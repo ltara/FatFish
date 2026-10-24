@@ -106,7 +106,7 @@ PyPI 包 `deepseek-harness-runtime-bin` 的 Windows wheel（`0.2.1rc2`，`win_am
 | 权限 | 采用 DSH 自带的权限预设与审批策略，**不自研**（见 §4） | 用户要求完全使用 DSH 的权限控制 |
 | 长期记忆 | 按需挂一个 MCP 记忆服务（`dsh-mcp-client`，已打包在 exe 中） | DSH 自带的是会话持久化和自动压缩，跨会话的记忆需要 MCP |
 
-原型 profile 在 `spikes/m2-dsh/profile/`，M3 时迁到 `app/core/profile/`。
+profile 位于 `app/core/profile/`。`engine-host.mjs` 每次启动 runtime 时，都会把这个目录整份覆盖到 `$DSH_HOME/profiles/fatfish/`，因此用户层的补丁不会生效，这是有意为之。
 
 匿名安装 ID（`identity/anonymous-user-id`）会附加在发往 DeepSeek 的请求上。它不包含身份信息，但要写进隐私说明。
 

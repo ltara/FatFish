@@ -1,6 +1,7 @@
 /**
  * Minimal DSH SDK client: spawn `dsh --profile <p>` and speak newline-delimited
- * JSON-RPC 2.0 over stdio. M2 spike; grows into app/core/engine-host.mjs.
+ * JSON-RPC 2.0 over stdio (protocol of the pinned 0.2.1-rc.2 runtime).
+ * Lifecycle, sessions and approvals live in engine-host.mjs.
  */
 import { spawn } from "node:child_process";
 
@@ -102,18 +103,24 @@ export class DshClient {
     return () => this.listeners.delete(fn);
   }
 
-  /** Send one text prompt and resolve with assistant texts once the session goes running → idle. */
+  /**
+   * Send one text prompt and resolve once the session goes running → idle.
+   * Returns assistant texts in order plus the last turn/end reason (e.g. { kind: "completed" }).
+   */
   async prompt(sessionId, text, timeoutMs = 180000) {
     const texts = [];
     const events = [];
+    let endReason = null;
     let sawRunning = false;
     let off;
     const done = new Promise((resolve, reject) => {
       const t = setTimeout(() => (off(), reject(new Error("turn_timeout"))), timeoutMs);
+      this.exited.then(() => (clearTimeout(t), off(), reject(new Error("engine_exited"))));
       off = this.onNotification((method, p) => {
         if (!p || p.sessionId !== sessionId) return;
         if (method === "session.event") {
           events.push(p.event);
+          if (p.event?.type === "turn/end") endReason = p.event.data?.reason || null;
           const txt = assistantText(p.event);
           if (txt) texts.push(txt);
         } else if (method === "session.status") {
@@ -128,7 +135,7 @@ export class DshClient {
     });
     await this.request("session/prompt", { sessionId, contentBlocks: [{ type: "text", text }] });
     await done;
-    return { texts, events };
+    return { texts, events, endReason };
   }
 
   async shutdown() {

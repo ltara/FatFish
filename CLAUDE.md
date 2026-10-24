@@ -28,7 +28,13 @@ npm run smoke            # 对 main/preload/service-manager/renderer 执行 node
 npm run pack             # electron-builder --dir（会先运行 ensure-crlf）
 npm run dist             # 仅 Windows → dist/FatFish-Setup-<ver>.exe（nsis）
 
-# Bridge（回复引擎，M3 后迁为 app/core）独立运行 — app/bridge
+# Core（伙伴核心，取代 bridge）— app/core；需要 vendor/dsh（fetch-vendor）
+npm install
+npm run check            # 对全部模块执行 node --check
+DEEPSEEK_API_KEY=… npm run e2e   # 用假 OneBot 后台 + 真 DSH 跑端到端验收（仅 Windows，临时 AppData）
+FATFISH_APPDATA=/tmp/fatfish-dev node server.mjs   # 独立运行
+
+# Bridge（旧回复引擎，M3 第 3 步删除）独立运行 — app/bridge
 npm install && FATFISH_APPDATA=/tmp/fatfish-dev node server.mjs
 
 # 本地设置服务独立运行 — app/shell（M3 删除）
@@ -48,7 +54,11 @@ node local-server.mjs    # 127.0.0.1:8787
 
 Electron 外壳 → fork **Core**（`app/core`，由 bridge 演进而来，两者之间走 IPC）→ Core 拉起 **DSH runtime**（`vendor/dsh/` 中的官方单文件 exe，`dsh --profile` 自有 `fatfish` profile，通过 stdio 走按行分隔的 JSON-RPC）。Core 通过 **Channel 适配层**接入 IM 平台，QQ 是第一个实现（NapCat WS `:3001`）。DSH 负责人格、会话持久化、记忆、工具、权限审批和定时提醒，肥鱼不自研 Agent 能力。`DSH_HOME` = `%AppData%\FatFish\dsh\`。
 
-### 当前代码
+### Core（`app/core`，M3 第 1 步已完成，尚未接入 Electron）
+
+`server.mjs`（入口，IPC 协议写在文件头注释里）→ `engine-host.mjs`（DSH 进程、profile 安装、会话恢复、崩溃重启；key、人设或模型变化时重启 runtime；审批回环服务）+ `router.mjs`（只放行 `config.owner_qq`，处理暂停，当日统计存在 `runtime/stats.json`）+ `channels/qq.mjs`（OneBot WS，只连 loopback，发送用消息段数组，不用 CQ 码）。`dsh-client.mjs` 是 JSON-RPC 客户端；`profile/` 是 fatfish profile，每次启动时整份覆盖到 `$DSH_HOME/profiles/fatfish`。Core 的日志只记录元数据，e2e 会检查日志里不出现消息原文。
+
+### 当前代码（Electron 仍然启动旧的 bridge）
 
 三个协同工作的本地进程，全部绑定 `127.0.0.1` 并使用 token 鉴权（绝不绑定 `0.0.0.0`）。`app/electron-ui/service-manager.js` 中的 `ServiceManager.startAll()` 按顺序启动它们，退出时 `stopAll()` 将其结束（依靠 `runtime/` 中的 PID 文件和子进程引用，Windows 上使用 `taskkill /T /F`）：
 

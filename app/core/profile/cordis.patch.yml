@@ -1,4 +1,5 @@
-# fatfish profile patch layer (M2 spike). Applied after dsh-base + dsh-sdk-app.
+# fatfish profile patch layer. Applied after dsh-base + dsh-sdk-app.
+# Core copies this directory into $DSH_HOME/profiles/fatfish on every engine start.
 # See docs/ARCHITECTURE.md §3.3. Each config here replaces the row's whole config.
 
 # Privacy: never attach session logs to official API requests.
@@ -34,6 +35,10 @@
   config:
     includeHarnessIdentity: false
     personaPrefix: !!js process.env.FATFISH_PERSONA || '你是用户的 AI 伙伴「肥鱼」。用简体中文，简短自然地回复。'
+    # Channel facts the persona text cannot know (M2: model claimed it forgets after restart).
+    personaSuffix: >-
+      你正在通过 QQ 私聊和你的主人说话。QQ 不显示 Markdown，回复请用纯文本，不用标题、列表符号和代码块。
+      你和主人的对话是连续保存的，程序重启后之前聊过的内容依然在，不要说自己会忘记。
 
 # Clock context: packaged in the runtime but not mounted by the sdk profile.
 # (dsh-schedule is NOT mountable here in rc2: sessionController → fileUploads → web `connection`;

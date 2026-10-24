@@ -7,7 +7,7 @@
 - Windows 10/11 x64（Git Bash），系统 Node 22（仅用于运行测试脚本，DSH 不依赖它）
 - DSH：PyPI `deepseek-harness-runtime-bin==0.2.1rc2` 的 `win_amd64` wheel，SHA256 `d38c18f5…1cb7`；exe 自报版本 `0.2.1-rc.2`
 - 模型：`deepseek-official` / `deepseek-flash`，使用真实 Key
-- `DSH_HOME` 为隔离的临时目录，profile 为自有的 `fatfish`（`spikes/m2-dsh/profile/`）
+- `DSH_HOME` 为隔离的临时目录，profile 为自有的 `fatfish`（验证时在 `spikes/m2-dsh/profile/`，M3 已迁到 `app/core/profile/`）
 
 ## 结论速览
 
@@ -88,7 +88,7 @@ schedule → sessionController → fileUploads → connection（web 客户端连
 ./scripts/fetch-vendor.sh                       # 现已包含 DSH（固定 SHA256，校验失败则退出）
 export DSH_EXE="$(cygpath -w vendor/dsh/deepseek-harness-sdk-runtime-win-x64.exe)"
 export SPIKE_HOME="$(cygpath -w /tmp/dsh-spike-home)" DEEPSEEK_API_KEY=…
-mkdir -p /tmp/dsh-spike-home/profiles/fatfish && cp spikes/m2-dsh/profile/* /tmp/dsh-spike-home/profiles/fatfish/
+mkdir -p /tmp/dsh-spike-home/profiles/fatfish && cp app/core/profile/* /tmp/dsh-spike-home/profiles/fatfish/
 cd spikes/m2-dsh
 node pending.mjs                                # 期望输出 all entries active
 node run.mjs boot|persona|memory|resume|privacy

@@ -1,0 +1,18 @@
+{
+  "name": "fatfish-core",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs",
+    "check": "node --check server.mjs && node --check engine-host.mjs && node --check router.mjs && node --check dsh-client.mjs && node --check paths.mjs && node --check channels/qq.mjs && node --check profile/fatfish-approval.mjs",
+    "e2e": "node dev/e2e.mjs"
+  },
+  "dependencies": {
+    "ws": "8.22.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

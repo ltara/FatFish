@@ -6,86 +6,80 @@
 
 每次回答一律使用中文（简体）。代码、命令、文件路径、标识符保持原样。
 
+## 先读这些
+
+1. `docs/HANDOFF.md`：现在做到哪、环境坑、下一步动作
+2. `docs/ARCHITECTURE.md`：架构的唯一参照（第 2 版：三实例）
+3. `docs/ROADMAP.md`：开发顺序与每一步的验收标准
+4. `docs/M2_DSH.md`：DSH 实测结论（协议、事件结构、隐私开关）
+5. `DESIGN.md`：界面设计
+
 ## 项目简介
 
-FatFish（肥鱼）：仅限 Windows、无需 Docker 的桌面客户端（Electron），是**住在用户电脑里的 AI 伙伴**。它有固定人格、记得聊过的事，能替主人在电脑上做事。智能引擎是 DeepSeek Harness（DSH），主人从 IM 平台和它聊天。第一个平台是 QQ：肥鱼登录一个小号，**主人用自己的主号私聊小号**。模型费用由用户自己的 Key 承担（默认 DeepSeek，可以切换其他模型）。文档与界面文案均为中文。最终交付物为 `FatFish-Setup-*.exe`。
+FatFish（肥鱼）：仅限 Windows、无需 Docker 的桌面客户端（Electron），是**住在用户电脑里的 AI 伙伴**。智能引擎是 DeepSeek Harness（DSH，锁定 `0.2.1rc2`）。一共有三种使用场景，每种对应一个独立的 DSH 实例：
+- **远程陪伴**（对外实例，v1）：主人在 IM 平台私聊肥鱼的小号，只能聊天、记事、设提醒，**不能接触电脑**。第一个平台是 QQ（NapCat）。
+- **本机助手**（本机实例，v1）：主人在肥鱼窗口里对话，可以使用全部工具，每次操作都要审批。
+- **自由活动**（自主实例，v2）：伙伴用自己的账号去社交平台和视频平台活动，与主人的数据完全隔离。
 
-商业模式：买断，一次性交付【安装包 + 文档】，**不做补丁更新**，交付即固定版本。安装包可以随意传播，首次使用**必须联网激活**，激活后永久有效。
+模型费用由用户自己的 Key 承担（默认 DeepSeek，可以切换）。商业模式是买断，一次性交付【安装包 + 文档】，**不做补丁更新**；安装包可以随意传播，首次使用**必须联网激活**，激活后永久有效。文档和界面文案都是中文。交付物是 `FatFish-Setup-*.exe`。
 
-**架构以 `docs/ARCHITECTURE.md` 为准**（目标态、DSH 集成方案、权限模型、激活方案、里程碑）。当前代码仍是旧结构（bridge 直连 DeepSeek），正在按该文档的 M2→M6 迁移。
-
-代码树在 macOS/Linux 上开发，但只有在 Windows 上才能完整运行；非 Windows 平台会跳过 Win 后台启动器（状态为 `degraded` / `backend_win_only`）。
+代码树也可以在 macOS/Linux 上开发，但只有 Windows 能完整运行（非 Windows 平台会跳过 Win 后台启动器，状态为 `degraded` / `backend_win_only`；DSH 只 vendor 了 Windows exe）。
 
 ## 常用命令
 
-项目没有测试套件，也没有 linter。验证方式为冒烟脚本加手动运行。
+项目没有测试框架，也没有 linter。验证方式是 e2e 脚本、冒烟脚本和手动运行。
 
 ```bash
-# Electron UI（官方外壳）— app/electron-ui
+# Core（伙伴核心）— app/core；需要 vendor/dsh（fetch-vendor）
 npm install
-npm start                # electron .
-npm run smoke            # 对 main/preload/service-manager/renderer 执行 node --check，若已安装 electron 则以 FATFISH_SMOKE=1 启动
-npm run pack             # electron-builder --dir（会先运行 ensure-crlf）
-npm run dist             # 仅 Windows → dist/FatFish-Setup-<ver>.exe（nsis）
-
-# Core（伙伴核心，取代 bridge）— app/core；需要 vendor/dsh（fetch-vendor）
-npm install
-npm run check            # 对全部模块执行 node --check
-DEEPSEEK_API_KEY=… npm run e2e   # 用假 OneBot 后台 + 真 DSH 跑端到端验收（仅 Windows，临时 AppData）
+npm run check                    # 对全部模块执行 node --check
+DEEPSEEK_API_KEY=… npm run e2e   # 假 OneBot 后台 + 真 DSH 的端到端验收（仅 Windows，临时 AppData）
+E2E_EXEC_PATH=<electron.exe> npm run e2e   # 用 Electron-as-Node 运行 Core，和打包后一致
 FATFISH_APPDATA=/tmp/fatfish-dev node server.mjs   # 独立运行
 
-# Bridge（旧回复引擎，M3 第 3 步删除）独立运行 — app/bridge
-npm install && FATFISH_APPDATA=/tmp/fatfish-dev node server.mjs
+# Electron UI — app/electron-ui
+ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/" npm install   # 直连 GitHub 会 TLS 失败
+npm start
+npm run smoke            # 对 Electron 外壳和 Core 执行 node --check；已安装 electron 时以 FATFISH_SMOKE=1 启动
+npm run pack | dist      # 仅 Windows；dist → dist/FatFish-Setup-<ver>.exe（先在 app/core 里执行 npm install）
 
-# 本地设置服务独立运行 — app/shell（M3 删除）
-node local-server.mjs    # 127.0.0.1:8787
+# 第三方 Windows 资源 → vendor/（napcat、node、dsh；写入带 SHA256 的 MANIFEST.txt；DSH 的哈希写死，不一致就退出）
+./scripts/fetch-vendor.sh        # 或 scripts\fetch-vendor.ps1（在 Git Bash 里调用时要加 env -u PSModulePath）
 
-# 将第三方 Windows 资源下载到 vendor/（会写入带 SHA256 的 vendor/MANIFEST.txt）
-./scripts/fetch-vendor.sh        # 或 scripts\fetch-vendor.ps1
+# 调试 DSH profile（见 docs/HANDOFF.md §5）
+node spikes/m2-dsh/pending.mjs   # 列出没有激活的插件行
 ```
 
-打包只走 Electron 的 `npm run dist` 路径（见 `docs/ELECTRON.md`），必须在 Windows 上运行。
+## 架构摘要（细节见 ARCHITECTURE）
 
-没有按用例运行的工具：语法检查用 `node --check <file>`，Electron 启动检查用 `npm run smoke`。
+Electron 外壳 → fork **Core**（`app/core`，走 IPC）→ Core 的 InstanceManager 管理 **1～3 个 DSH 进程**（`vendor/dsh/*.exe --profile fatfish-<实例>`，stdio JSON-RPC，每个实例的 `DSH_HOME` 是 `%AppData%\FatFish\dsh\<实例>`）→ Channel 层接入 IM 平台（`channels/qq.mjs` → NapCat WS `:3001`）。自有 Cordis 插件（审批、记忆、提醒……）通过回环 HTTP 把请求交给 Core 处理，**数据范围由 Core 决定**。
 
-## 架构
+**现状**：M3 第 1、2 步完成，但目前是**单实例**（profile `app/core/profile/`，`workspace-write` + 审批），主人只认 `config.owner_qq`（没有界面能设置它），所以真实渠道不会回复任何人。`app/shell/`（`:8787`）仍然会被启动，`app/bridge/` 已经不再启动，两者都要在 M3-C 删除。下一步是 M3-A（三实例框架 + 对外实例无工具）。
 
-### 目标态（详见 `docs/ARCHITECTURE.md`）
+### Electron UI（`app/electron-ui`）
 
-Electron 外壳 → fork **Core**（`app/core`，由 bridge 演进而来，两者之间走 IPC）→ Core 拉起 **DSH runtime**（`vendor/dsh/` 中的官方单文件 exe，`dsh --profile` 自有 `fatfish` profile，通过 stdio 走按行分隔的 JSON-RPC）。Core 通过 **Channel 适配层**接入 IM 平台，QQ 是第一个实现（NapCat WS `:3001`）。DSH 负责人格、会话持久化、记忆、工具、权限审批和定时提醒，肥鱼不自研 Agent 能力。`DSH_HOME` = `%AppData%\FatFish\dsh\`。
-
-### Core（`app/core`，M3 第 1、2 步已完成，已接入 Electron）
-
-`server.mjs`（入口，IPC 协议写在文件头注释里）→ `engine-host.mjs`（DSH 进程、profile 安装、会话恢复、崩溃重启；key、人设或模型变化时重启 runtime；审批回环服务）+ `router.mjs`（只放行 `config.owner_qq`，处理暂停，当日统计存在 `runtime/stats.json`）+ `channels/qq.mjs`（OneBot WS，只连 loopback，发送用消息段数组，不用 CQ 码）。`dsh-client.mjs` 是 JSON-RPC 客户端；`profile/` 是 fatfish profile，每次启动时整份覆盖到 `$DSH_HOME/profiles/fatfish`。Core 的日志只记录元数据，e2e 会检查日志里不出现消息原文。
-
-### Electron 外壳与进程管理
-
-三个协同工作的本地进程，全部绑定 `127.0.0.1` 并使用 token 鉴权（绝不绑定 `0.0.0.0`）。`app/electron-ui/service-manager.js` 中的 `ServiceManager.startAll()` 按顺序启动它们，退出时 `stopAll()` 将其结束（依靠 `runtime/` 中的 PID 文件和子进程引用，Windows 上使用 `taskkill /T /F`）：
-
-1. **本地设置服务** — `app/shell/local-server.mjs`（`:8787`），通过 `ELECTRON_RUN_AS_NODE=1` + `process.execPath` 运行，失败时回退到 `vendor/node/node.exe`。属于冗余组件，M3 删除（保存 Key 已由主进程直接写文件）。
-2. **后台登录/WS 服务** — `vendor/napcat` 中的第三方 Win 启动器（`launcher-user.bat`/`launcher.bat`），提供登录页（`:6099`）和本地 WS（`:3001`）。不能以 Electron-as-Node 方式运行；需要用户已安装官方 QQ。`.bat` 文件必须使用 CRLF 换行（由 `.gitattributes` + `scripts/ensure-crlf*` 保证，`dist`/`pack` 会自动运行），否则 cmd 会立即退出。
-3. **Core** — `app/core/server.mjs`，通过 `fork`（Electron-as-Node）启动，带 IPC。`service-manager.js` 缓存 Core 上报的状态（`getCore()`），用 `sendCore()` 下发命令（`pause` / `reload` / `shutdown` / `approval_answer`）。审批 UI 要到 M4 才做；在那之前，没有监听者时一律拒绝。`app/bridge/` 已不再启动，会在 M3 第 3 步删除。
-
-Electron UI（`app/electron-ui`）：`main.js`（窗口、托盘、所有 `ipcMain.handle` 处理器）↔ `preload.js`（`contextBridge` → `window.fatfish`，每个 IPC 通道一行封装）↔ `renderer/`（单窗口：首页 / 人设 / 功能 / 设置页面，风险确认、登录、首次设置等覆盖层；纯 HTML/JS/CSS，无框架）。新增涉及主数据的功能需要三处同时修改：`main.js` 中的处理器、`preload.js` 中的封装、`renderer.js` 中的调用。登录是应用内对 `http://127.0.0.1:6099/webui/` 的 `<webview>`；禁止使用 `shell.openExternal` 或系统浏览器。`login-api.js` 封装登录服务的 API；`persona-lib.js` 管理人设库（`personas.json`），应用某个人设时会将其写入 `persona.txt`，并通过 `runtime/persona_rev` 通知 bridge 重新加载。`runtime/outbound_paused` 是 bridge 检查的“暂停外发”标志。这两个文件标志在 M3 改为 IPC。
-
-已知断层（M3 修复）：功能页的「记住聊过的话」「使用本机工具」开关只写进了 config，bridge 不读；首页「今日互动」没有数据源。
+`main.js`（窗口、托盘、所有 `ipcMain.handle`）↔ `preload.js`（`contextBridge` → `window.fatfish`，每个 IPC 通道对应一行封装）↔ `renderer/`（纯 HTML/JS/CSS，没有框架）。**新增涉及主数据的功能，要同时修改 `main.js`、`preload.js`、`renderer.js` 三处。**`service-manager.js` 负责拉起后台和 Core：`getCore()` 读取 Core 上报的状态快照，`sendCore()` 下发命令。登录是应用内的 `<webview>` 打开 `http://127.0.0.1:6099/webui/`，**禁止**使用 `shell.openExternal` 或系统浏览器。后台启动器的 `.bat` 必须是 CRLF 换行（`.gitattributes` + `scripts/ensure-crlf*` 保证），否则 cmd 会立刻退出。
 
 ### 数据与路径
 
-用户数据位于 `%AppData%\FatFish\`（`config.json`、`persona.txt`、`personas.json`、`secrets/deepseek_api_key`、`secrets/local_token`、`logs/`、`runtime/`；目标态新增 `license.json`、`dsh/`）。可用 `FATFISH_APPDATA` 覆盖根目录（bridge 与 Electron 均支持；非 Windows 下 bridge 回退到 `~/.fatfish`）。开发环境与打包后的资源路径不同（仓库根目录 vs `process.resourcesPath`；见 `docs/ELECTRON.md` 中的表格以及 `app/electron-ui/package.json` 中的 `build.extraResources`）。
+用户数据在 `%AppData%\FatFish\`（完整布局见 ARCHITECTURE §14），可以用 `FATFISH_APPDATA` 覆盖。开发和打包后的资源路径不同（仓库根目录 vs `process.resourcesPath`，见 `docs/ELECTRON.md` 和 `app/electron-ui/package.json` 的 `build.extraResources`）。
 
 ## 架构红线
 
-- **权限完全使用 DSH 自带的机制**（权限预设、审批策略、沙箱），不自研权限系统。肥鱼只决定「谁的消息能进入哪个 runtime」以及「审批请求转给谁」。
-- **只有主人的消息能进入带工具的 runtime**。主人身份只认 NapCat 上报的 `user_id`，不认消息正文里的声明；主人 QQ 号只能在电脑端修改。v1 对其他人一律不回复。以后如果开放陪聊，必须单独起一个 runtime（独立的 `DSH_HOME` 子目录，`read-only` + `never`，无工具）。DSH 的权限按进程生效，不能只靠提示词隔离。
-- **DSH 隐私与隔离开关**：`fatfish` profile 必须关闭 `session-log-deepseek`（默认会把会话日志附带上传给官方 API）和 `plugin-package-inventory-deepseek`（默认附带本机插件清单），把 OTel 遥测设为 `DISABLED`，并让 `skill-filesystem` / `agent-instructions` 不读取宿主机上的技能和 AGENTS.md。改动 profile 补丁时不得重新打开；改完后用 `spikes/m2-dsh` 的 `privacy` 场景重新实测（见 `docs/M2_DSH.md`）。
-- **rc2 的 SDK 没有 `approvalRequests` / `user-question/ask`**（那是 master 分支的功能）。审批走自有 Cordis 插件 `fatfish-approval.mjs`。
-- **锁死版本，不升级**：DSH `0.2.1rc2`、NapCat、Node、Electron 33.x、electron-builder 25.1.8 都必须锁定确切版本。交付后不发补丁，外部变化（模型下线等）要能通过设置里的配置规避。
-- **许可证**：主进程和 Core 各自独立验签（Ed25519，离线），Core 验签不通过就不拉起 DSH。私钥只存在于激活服务端，绝不入库。
+- **按输入来源划分信任**：所有外部渠道的消息**只进对外实例**；对外实例**没有任何能接触本机的工具**（读写文件、执行命令、`web_fetch`、子代理、技能等，清单见 ARCHITECTURE §4.2），沙箱是 `read-only`，工作目录是空目录。**改动 profile 后，必须用录制代理实测请求体的 `tools[]` 与白名单一致**，不能只看配置。本机实例只接 Electron 的对话页。
+- **能力不靠提示词约束**：「不许做什么」要通过「这个实例里没有对应工具」来保证。DSH 的权限按进程生效，隔离就必须用不同进程和不同的 `DSH_HOME`。
+- **主人身份只认绑定表**（`owners`，通过配对码绑定，只认平台上报的账号），不认消息正文或提示词。主人信息可以写进提示词，但只用于对话内容。解除绑定只能在电脑上操作。
+- **权限完全使用 DSH 自带的机制**，不自研。肥鱼只负责路由、审批转发和插件数据范围。
+- **DSH 隐私与隔离开关**（所有实例共用）：关闭 `session-log-deepseek`、`plugin-package-inventory-deepseek`；OTel 设为 `DISABLED`；`skill-filesystem` 和 `agent-instructions` 不读取宿主机内容。不得重新打开，改完后要实测（`spikes/m2-dsh/run.mjs privacy`）。
+- **rc2 的 SDK 没有 `approvalRequests` / `user-question/ask`**（那是 master 分支的功能），审批走自有插件。协议代码以 exe 的实际行为为准，不以 master 的文档为准。
+- **自由活动（v2）里不能有任何属于主人的东西**：主人的文件、私密记忆、账号、本机网络都不能有（ARCHITECTURE §9）。
+- **锁死版本，不升级**：DSH `0.2.1rc2`、NapCat、Node、`ws` 8.22.0、Electron 33.4.11、electron-builder 25.1.8。
+- **许可证**：主进程和 Core 各自独立验签（Ed25519，离线），Core 验签不通过就不拉起 DSH。私钥只放在激活服务端，绝不入库。
 
 ## 容易踩坑的约定
 
-- **面向用户的禁用词**：`docs/用户说明书.md`、`app/electron-ui`（包括注释和 toast）中不得出现 QQNT、NapCat、OneBot、肥鱼桥、Docker、DSH、DeepSeek Harness、Cordis。请使用 `docs/DEV.md` 中的对照表（如 后台服务、智能回复引擎、登录窗口）。曾有提交为避免误检而改写了一条注释。人设提示词与 UI 也不得出现模型厂商或上游框架的名称。内部文档（`docs/DEV.md`、`docs/ARCHITECTURE.md` 等）不受此限制。
-- API Key 绝不完整记录到日志或回显。日志只记录元数据（时间、方向、长度、错误码），**不记录消息正文**。
-- 手写的 `.ps1` 文件必须是 UTF-8 **带 BOM**（或纯 ASCII），否则 Windows PowerShell 5.1 会错误解析中文。
-- 提交信息格式为 `type(scope): 中文描述`（如 `feat(ui): …`、`fix(ui): …`）。
+- **面向用户的禁用词**：`docs/用户说明书.md`、`app/electron-ui`（包括注释和 toast）里不能出现 QQNT、NapCat、OneBot、肥鱼桥、Docker、DSH、DeepSeek Harness、Cordis，用 `docs/DEV.md` 的对照表替换。人设提示词和 UI 也不能出现模型厂商或上游框架的名称。内部文档不受这条限制。
+- API Key 绝不完整记录到日志或回显。日志只记录元数据（时间、方向、长度、错误码），**不记录消息正文**（e2e 会检查）。
+- 自有 Cordis 插件**绝不写 stdout**（stdout 是 JSON-RPC 通道）；任何异常都按「拒绝」或「空结果」处理。
+- 手写的 `.ps1` 必须是 UTF-8 **带 BOM**（或纯 ASCII），否则 Windows PowerShell 5.1 会把中文解析错。
+- 提交信息格式：`type(scope): 中文描述`（例如 `feat(core): …`、`fix(ui): …`）。

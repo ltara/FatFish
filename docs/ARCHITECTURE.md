@@ -72,8 +72,9 @@ DSH 是一个 Cordis 插件框架，通过 **profile**（一组 bundle 叠加 `c
 | C→S | `shutdown` | 退出 |
 | S→C | `session.event` | 所有会话事件；从 `assistant/message` 取出回复文本发回 QQ |
 | S→C | `session.status` | `running` / `idle`，用来驱动「对方正在输入」和超时处理 |
-| S→C | `approval/request` | 工具审批 → 转给 Electron 弹窗或主人 QQ（见 §4） |
-| S→C | `user-question/ask` | 模型主动提问 → 转发到主人 QQ |
+| — | 审批 | **rc2 的 SDK 不转发 `approval/request`**（M2 实测）。改由自有 Cordis 插件 `fatfish-approval.mjs` 应答运行时内部的 waterfall，经回环 HTTP 询问 Core（见 §4、`docs/M2_DSH.md` §1） |
+
+`initialize.approvalRequests`、`user-question/ask` 是 master 分支的功能，锁定的 rc2 中没有，不要使用。
 
 注意事项（来自协议文档）：没有 cancel 方法，要中止一轮只能结束进程；协议版本 `0.0.1`，没有兼容承诺，所以必须锁死版本；收到的通知覆盖所有会话，按 `sessionId` 过滤由客户端负责。
 
@@ -81,10 +82,10 @@ DSH 是一个 Cordis 插件框架，通过 **profile**（一组 bundle 叠加 `c
 
 ### 3.2 运行时分发：官方单文件 exe
 
-PyPI 包 `deepseek-harness-runtime-bin` 的 Windows wheel（`0.2.1rc2`，`win_amd64`，**约 84 MB**）里有一个**单文件可执行程序** `deepseek-harness-sdk-runtime-win32-x64.exe`，自带 Node 和全部依赖，附带 `-rg.exe` sidecar。运行时只要求设置 `DSH_HOME`，不需要系统 Node、npm 或 pnpm。
+PyPI 包 `deepseek-harness-runtime-bin` 的 Windows wheel（`0.2.1rc2`，`win_amd64`，83.9 MB）里有一个**单文件可执行程序** `deepseek-harness-sdk-runtime-win-x64.exe`，自带 Node 和全部依赖，附带 `-rg.exe` sidecar。运行时只要求设置 `DSH_HOME`，不需要系统 Node、npm 或 pnpm。
 
-- `fetch-vendor` 增加一步：下载这个 wheel（它本身是 zip 包），解出 exe 和 sidecar，放到 `vendor/dsh/`，并把 SHA256 记录进 `MANIFEST.txt`。
-- 安装包随附 DSH，**不再需要侧载**。`docs/M0_VOLUME.md` 里「npm 安装后约 710 MB」的结论作废。安装后的体积预估：DSH 约 84～150 MB（exe 是 Brotli 压缩的，需要在 Windows 上实测）。
+- `fetch-vendor` 已实现：下载 wheel 后校验写死的 SHA256（不一致则退出），把 exe、sidecar 和许可证解压到 `vendor/dsh/`，并写入 `MANIFEST.txt`。
+- 安装包随附 DSH，**不再需要侧载**。`docs/M0_VOLUME.md` 里「npm 安装后约 710 MB」的结论作废。M2 实测：解压后 **278.6 MB**，冷启动约 0.8 s，常驻内存约 210 MB。
 - `DSH_HOME` = `%AppData%\FatFish\dsh\`，与用户自己可能装的 DSH（`~/.dsh`）完全隔离。
 - 锁定版本：`0.2.1rc2`。DSH 处于 developer preview，明确声明会有破坏性变更，这与「交付即固定」一致，**发版后不再升级**。
 - 在 `THIRD_PARTY_NOTICES` 里附上 DSH 的 MIT 许可。
@@ -95,12 +96,17 @@ PyPI 包 `deepseek-harness-runtime-bin` 的 Windows wheel（`0.2.1rc2`，`win_am
 
 | 目的 | 处理 | 原因 |
 |---|---|---|
-| 人格 | 替换系统提示词中「AI agent powered by DeepSeek Harness」的身份和 coding persona，改成人设库的当前人格 | 默认是编程助手人设 |
-| **关闭会话日志上传** | `session-log-deepseek.enabled: false` | 默认开启：调用官方 API 时会把会话日志（每次最多 8 MiB）附带上传，违背「聊天内容不出本机」 |
-| **关闭遥测** | OTel session upload 设为 `DISABLED` | 默认是 `FEEDBACK_ONLY` |
-| 时区 | `time-context.timeZone: Asia/Shanghai`，同时给子进程设置 `TZ` | SDK 协议不传时区，定时提醒会错 |
+| 人格 | `system-prompt`：`includeHarnessIdentity: false` + `personaPrefix` 设为当前人格（M2 已验证） | 默认是「coding agent」人设 |
+| **关闭会话日志上传** | `session-log-deepseek.enabled: false` | 默认开启：调用官方 API 时会把会话日志（每次最多 8 MiB）附带上传，违背「聊天内容不出本机」（M2 抓包证实默认会上传） |
+| **关闭插件清单上报** | `plugin-package-inventory-deepseek.enabled: false` | 默认会在每个请求里附带 `dsh_plugin_packages`（M2 新发现） |
+| **关闭遥测** | `session-telemetry-otel.mode: DISABLED` | 默认是 `FEEDBACK_ONLY` |
+| **隔离宿主机内容** | `skill-filesystem.includeDefaultRoots: false`；`agent-instructions.maxBytes: 0` | 默认会扫描用户电脑上的 `~/.agents`、`~/.dsh` 技能和 AGENTS.md；M2 中模型把开发机上的第三方技能当成了自己的能力 |
+| 时区 | 插入 `dsh-time-context`，设置 `timeZone: Asia/Shanghai`，同时给子进程设置 `TZ` | sdk profile 默认不挂载；SDK 协议也不传时区 |
+| 审批应答 | 插入 `./fatfish-approval.mjs` | rc2 的 SDK 不转发审批（见 §3.1） |
 | 权限 | 采用 DSH 自带的权限预设与审批策略，**不自研**（见 §4） | 用户要求完全使用 DSH 的权限控制 |
-| 长期记忆 | 按需挂一个 MCP 记忆服务（`dsh-mcp-client`） | DSH 自带的是会话持久化和自动压缩，跨会话的记忆需要 MCP |
+| 长期记忆 | 按需挂一个 MCP 记忆服务（`dsh-mcp-client`，已打包在 exe 中） | DSH 自带的是会话持久化和自动压缩，跨会话的记忆需要 MCP |
+
+原型 profile 在 `spikes/m2-dsh/profile/`，M3 时迁到 `app/core/profile/`。
 
 匿名安装 ID（`identity/anonymous-user-id`）会附加在发往 DeepSeek 的请求上。它不包含身份信息，但要写进隐私说明。
 
@@ -108,7 +114,11 @@ PyPI 包 `deepseek-harness-runtime-bin` 的 Windows wheel（`0.2.1rc2`，`win_am
 
 - **主人 = 一个长期会话** `owner-<QQ号>`。会话持久化在 `DSH_HOME/sessions`（JSONL），重启后用 `session/resume` 恢复。DSH 会自动压缩旧上下文，所以长期聊下去不会爆上下文。
 - 「换人设」= 更新 profile 的系统提示词并重启 runtime（sdk profile 关闭了 HMR，配置只在启动时生效）。人格切换后会话是延续还是新开，在 M2 实测后决定。
-- 主动消息：DSH 自带 `schedule_create/list/update/delete` 工具。提醒到期时，Host 把消息投递到原会话的 inbox，触发一轮回复，Core 照常把产出转发到 QQ。**定时提醒、早安这类陪伴能力不需要自研**；前提是 runtime 常驻（随 Electron 托盘常驻）。
+- 主动消息：~~使用 DSH 自带的 schedule~~。**M2 实测在 rc2 的 sdk profile 中挂载不了**（依赖链会延伸到 Web Host，见 `docs/M2_DSH.md` §2）。**已决定（2026-10-25）：方案 A，肥鱼自写提醒插件**，和 `fatfish-approval.mjs` 用同一种机制：
+  - 插件向模型暴露 `remind_create` / `remind_list` / `remind_delete` 三个工具，通过回环 HTTP 交给 Core 落盘（`%AppData%\FatFish\reminders.json`）。插件本身不保存状态。
+  - Core 负责计时。到期后向原会话发送 `session/prompt`（例如「[提醒到期] 喝水」），伙伴按人格生成一句话，照常发到 QQ。
+  - 「暂停」期间，到期的提醒照常触发，但不发出去（与 §4 一致）。Core 重启后会补发已过期的一次性提醒，周期提醒只补发最近一次。
+  - 安排在 M4。
 
 ### 3.5 模型切换
 
@@ -120,7 +130,7 @@ DSH 的 provider 层原生支持：内置的第三方 provider（`openai`、`ant
 
 | 身份 | 处理 |
 |---|---|
-| **主人**（首次向导中绑定的 QQ 号） | 进入主 runtime：`workspace-write` + `ask`。`approval/request` 交给主人确认：电脑端弹窗，或回到主人 QQ 由主人回复「同意 / 拒绝」；超时视为拒绝 |
+| **主人**（首次向导中绑定的 QQ 号） | 进入主 runtime：`workspace-write` + `ask`。审批请求由 `fatfish-approval` 插件转给 Core，再交给主人确认：电脑端弹窗（正文使用 `displayReason.zh`），或回到主人 QQ 由主人回复「同意 / 拒绝」；超时视为拒绝。注意：写入工作区和 `%TEMP%` 不会触发审批 |
 | **其他任何人** | v1 **默认不回复**，不进入 DSH。如果以后开放陪聊，必须使用**独立的 runtime 实例**（单独的 `DSH_HOME` 子目录，`read-only` + `never`，移除工具），并且不和主人共享会话与记忆 |
 
 原因：SDK 协议的权限是**按 runtime 进程**生效的，不能按会话设置。所以隔离必须通过进程和 `DSH_HOME` 来实现，不能只靠提示词。QQ 是任何人都能发消息的入口，陌生人消息一旦进了带工具的 runtime，就等于远程控制主人的电脑。
@@ -225,17 +235,19 @@ vendor/
 |---|---|---|
 | **M2 DSH 技术验证**（Windows 实机） | 从 wheel 解出 exe；`fatfish` profile；Core 原型通过 JSON-RPC 收发 | ①多轮对话和重启后 `session/resume` 恢复上下文 ②替换人格提示词生效 ③一次需要审批的工具调用被 `approval/request` 截获 ④定时提醒到期后自动发起一轮 ⑤日志上传和遥测确认关闭（抓包验证）⑥实测安装体积、冷启动时间、常驻内存 |
 | **M3 核心重构** | `app/core` 分层；QQ Channel；主人身份路由；删除 8787 和文件标志；IPC 上报 | 主人私聊有回复，非主人不回复，暂停有效，UI 的状态和统计都是真实数据 |
-| **M4 伙伴能力** | 人设对接 profile；审批弹窗和 QQ 内审批；长期记忆（MCP）；模型切换设置；记忆查看和清除 | 跨会话能记起事实；切换到第三方模型后对话正常 |
+| **M4 伙伴能力** | 人设对接 profile；审批弹窗和 QQ 内审批；长期记忆（MCP）；提醒插件（§3.4）；工具裁剪；模型切换设置；记忆查看和清除 | 跨会话能记起事实；「1 分钟后提醒我喝水」能准时在 QQ 收到；切换到第三方模型后对话正常 |
 | **M5 激活** | Workers 服务；客户端许可证；首次向导（激活 → Key / 模型 → 绑定主人 → 登录 QQ） | 未激活无法使用；换机走解绑流程；断网时已激活用户正常使用 |
 | **M6 交付** | 打包、体积、用户说明书（隐私说明和风险告知更新）、售后手册、锁定的 QQ 版本说明 | 在干净的 Win10 / Win11 上从安装到第一次对话全流程通过 |
 
-## 11. 待 M2 实测确认
+## 11. 待确认问题
 
-调研来源是 DSH 仓库文档，未在 Windows 上实际运行。以下问题需要 M2 验证：
+M2 结果见 `docs/M2_DSH.md`。
 
-1. `sdk` profile 下替换系统提示词、身份和 coding persona 的确切补丁写法（对应的配置行在 `docs/config-catalog.md`）。
-2. Windows 工具栈挂载的是 `tool-pwsh`：需要确认依赖 PowerShell 7（`pwsh`）还是 Windows PowerShell 5.1；如果需要 7，要考虑随附还是改用其他工具。
-3. `computer-use` 包（操控应用）在 Windows 下的可用性，以及它的权限和审批行为。
-4. `approval/request` 的 `reason` 和 `toolName` 是否足够生成让普通用户看得懂的审批文案。
-5. MCP 记忆服务用哪一个；它需要的 Node 能不能复用 `vendor/node`。
-6. runtime 常驻时的内存占用，以及 Windows Defender 对单文件 exe 的误报情况。
+1. ~~人格补丁的写法~~：已解决（§3.3）。
+2. Windows 工具栈使用 `pwsh`（PowerShell 7）。开发机装有 PowerShell 7，所以**仍需要在只有 5.1 的干净 Win10 上实测**：如果需要 7，要考虑随附还是改用其他工具。
+3. `computer-use` 包（操控应用）在 Windows 下的可用性，以及它的权限和审批行为（M4）。
+4. ~~审批文案~~：已解决，`displayReason.zh` 可以直接用作弹窗正文。
+5. MCP 记忆服务用哪一个；它需要的 Node 能不能复用 `vendor/node`（M4）。
+6. ~~常驻内存~~：约 210 MB。Windows Defender 对单文件 exe 的误报情况仍需在干净系统上验证。
+7. ~~主动提醒的实现方式~~：已决定采用方案 A，自写提醒插件（§3.4）。
+8. **新增**：伙伴场景下默认的 25 个编程类工具要裁剪到什么程度（M4）。

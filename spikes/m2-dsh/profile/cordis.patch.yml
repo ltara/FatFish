@@ -1,0 +1,48 @@
+# fatfish profile patch layer (M2 spike). Applied after dsh-base + dsh-sdk-app.
+# See docs/ARCHITECTURE.md §3.3. Each config here replaces the row's whole config.
+
+# Privacy: never attach session logs to official API requests.
+- id: session-log-deepseek
+  config:
+    enabled: false
+    maxBytes: 8388608
+
+# Privacy: no OTel session upload.
+- id: session-telemetry-otel
+  config:
+    mode: DISABLED
+
+# Privacy: no local plugin inventory (`dsh_plugin_packages`) on official requests.
+- id: plugin-package-inventory-deepseek
+  config:
+    enabled: false
+
+# Isolation: never pick up skills installed on the host (~/.agents, ~/.dsh, project roots).
+- id: skill-filesystem
+  config:
+    includeDefaultRoots: false
+    customSkillDirs: []
+    watch: false
+
+# Isolation: never load host AGENTS.md-style instructions; persona comes from system-prompt.
+- id: agent-instructions
+  config:
+    maxBytes: 0
+
+# Companion persona instead of the coding-agent identity.
+- id: system-prompt
+  config:
+    includeHarnessIdentity: false
+    personaPrefix: !!js process.env.FATFISH_PERSONA || '你是用户的 AI 伙伴「肥鱼」。用简体中文，简短自然地回复。'
+
+# Clock context: packaged in the runtime but not mounted by the sdk profile.
+# (dsh-schedule is NOT mountable here in rc2: sessionController → fileUploads → web `connection`;
+#  see docs/M2_DSH.md. Reminders are a FatFish-side decision.)
+- insert:
+    - id: time-context
+      name: '@deepseek-ai/dsh-time-context'
+      config:
+        timeZone: Asia/Shanghai
+    # Approval answerer: forwards DSH approval/request to Core (rc2 SDK server does not).
+    - id: fatfish-approval
+      name: './fatfish-approval.mjs'

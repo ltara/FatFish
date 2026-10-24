@@ -17,6 +17,8 @@ out/
 vendor/napcat/
 vendor/qqnt/
 vendor/node/
+vendor/dsh/
+vendor/*.whl
 vendor/*.zip
 vendor/*.7z
 

@@ -68,7 +68,8 @@ Electron UI（`app/electron-ui`）：`main.js`（窗口、托盘、所有 `ipcMa
 
 - **权限完全使用 DSH 自带的机制**（权限预设、审批策略、沙箱），不自研权限系统。肥鱼只决定「谁的消息能进入哪个 runtime」以及「审批请求转给谁」。
 - **只有主人的消息能进入带工具的 runtime**。主人身份只认 NapCat 上报的 `user_id`，不认消息正文里的声明；主人 QQ 号只能在电脑端修改。v1 对其他人一律不回复。以后如果开放陪聊，必须单独起一个 runtime（独立的 `DSH_HOME` 子目录，`read-only` + `never`，无工具）。DSH 的权限按进程生效，不能只靠提示词隔离。
-- **DSH 隐私开关**：`fatfish` profile 必须关闭 `session-log-deepseek`（默认会把会话日志附带上传给官方 API），并把 OTel 遥测设为 `DISABLED`。改动 profile 补丁时不得重新打开。
+- **DSH 隐私与隔离开关**：`fatfish` profile 必须关闭 `session-log-deepseek`（默认会把会话日志附带上传给官方 API）和 `plugin-package-inventory-deepseek`（默认附带本机插件清单），把 OTel 遥测设为 `DISABLED`，并让 `skill-filesystem` / `agent-instructions` 不读取宿主机上的技能和 AGENTS.md。改动 profile 补丁时不得重新打开；改完后用 `spikes/m2-dsh` 的 `privacy` 场景重新实测（见 `docs/M2_DSH.md`）。
+- **rc2 的 SDK 没有 `approvalRequests` / `user-question/ask`**（那是 master 分支的功能）。审批走自有 Cordis 插件 `fatfish-approval.mjs`。
 - **锁死版本，不升级**：DSH `0.2.1rc2`、NapCat、Node、Electron 33.x、electron-builder 25.1.8 都必须锁定确切版本。交付后不发补丁，外部变化（模型下线等）要能通过设置里的配置规避。
 - **许可证**：主进程和 Core 各自独立验签（Ed25519，离线），Core 验签不通过就不拉起 DSH。私钥只存在于激活服务端，绝不入库。
 

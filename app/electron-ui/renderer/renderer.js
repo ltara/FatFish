@@ -645,7 +645,7 @@
       setPersonaMsg(msg, message || "应用失败。", "err");
       return;
     }
-    // persona-lib 已含「已应用「名字」」+ 记忆重置；勿再拼「会重置」
+    // persona-lib 已含「已应用「名字」」+ 记忆重置；勿再二次拼接
     setPersonaMsg(
       msg,
       message || "已应用。下一句私聊起按新人设回复（对话记忆已重置）。",

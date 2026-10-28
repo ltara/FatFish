@@ -7,11 +7,43 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dev": "electron .",
+    "dev": "node scripts/run-development-client.cjs",
+    "development-ui-check": "node scripts/development-ui-check.cjs",
+    "development-activation-check": "node scripts/development-activation-check.cjs",
     "smoke": "node scripts/smoke-main.js",
-    "dist": "npm run ensure-crlf && electron-builder --win nsis",
-    "pack": "npm run ensure-crlf && electron-builder --dir",
-    "ensure-crlf": "node ../../scripts/ensure-crlf.js"
+    "pairing-ui": "node scripts/run-pairing-ui-test.js",
+    "dist": "npm run build:ui && npm run ensure-crlf && electron-builder --win nsis",
+    "pack": "npm run build:ui && npm run ensure-crlf && electron-builder --dir",
+    "ensure-crlf": "node ../../scripts/ensure-crlf.js",
+    "lifecycle-ui": "node scripts/run-lifecycle-ui-test.js",
+    "status-ui": "node scripts/run-status-ui-test.js",
+    "local-ui": "node scripts/run-local-ui-test.js",
+    "memory-ui": "node scripts/run-memory-ui-test.js",
+    "inbox-check": "node scripts/reminder-inbox-check.js",
+    "inbox-main-check": "node scripts/inbox-main-check.js",
+    "workspace-main-check": "node scripts/workspace-main-check.js",
+    "model-main-check": "node scripts/model-main-check.js",
+    "model-view-check": "node scripts/model-view-check.js",
+    "model-data-check": "node scripts/model-data-check.js",
+    "license-main-check": "node scripts/license-main-check.js",
+    "activation-view-check": "node scripts/activation-view-check.js",
+    "onboarding-store-check": "node scripts/onboarding-store-check.js",
+    "onboarding-view-check": "node scripts/onboarding-view-check.js",
+    "onboarding-data-check": "node scripts/model-data-check.js --onboarding",
+    "onboarding-wiring-check": "node scripts/onboarding-wiring-check.js",
+    "data-clear-check": "node scripts/data-clear-check.js",
+    "data-clear-main-check": "node scripts/data-clear-main-check.js",
+    "data-clear-view-check": "node scripts/data-clear-view-check.js",
+    "data-clear-runtime-check": "node scripts/data-clear-runtime-check.mjs",
+    "persona-actions-check": "node scripts/persona-actions-check.js",
+    "persona-store-check": "node scripts/persona-store-check.js",
+    "persona-data-check": "node scripts/persona-data-check.js",
+    "activation-display-check": "node scripts/activation-display-check.js",
+    "build:ui": "node scripts/build-ui.mjs",
+    "check:ui": "tsc --noEmit",
+    "framework-check": "node scripts/ui-framework-check.js",
+    "brand-assets-check": "node scripts/brand-assets-check.cjs",
+    "prestart": "npm run build:ui"
   },
   "engines": {
     "node": ">=20"
@@ -26,14 +58,23 @@
     "files": [
       "main.js",
       "persona-lib.js",
+      "chat-store.js",
+      "reminder-inbox.js",
+      "reminder-controller.js",
       "preload.js",
       "service-manager.js",
       "login-api.js",
       "renderer/**/*",
       "assets/**/*",
-      "package.json"
+      "package.json",
+      "onboarding-store.js",
+      "data-clear.js",
+      "activation-display.js"
     ],
     "asar": true,
+    "beforePack": "../../scripts/release/before-pack.cjs",
+    "afterPack": "../../scripts/release/after-pack.cjs",
+    "afterSign": "../../scripts/release/after-sign.cjs",
     "extraResources": [
       {
         "from": "../core",
@@ -54,14 +95,6 @@
         ]
       },
       {
-        "from": "../shell",
-        "to": "shell",
-        "filter": [
-          "local-server.mjs",
-          "package.json"
-        ]
-      },
-      {
         "from": "../../vendor/napcat",
         "to": "vendor/napcat",
         "filter": [
@@ -78,6 +111,7 @@
       }
     ],
     "win": {
+      "icon": "assets/icon.ico",
       "target": [
         {
           "target": "nsis",
@@ -89,6 +123,8 @@
       "artifactName": "FatFish-Setup-${version}.${ext}"
     },
     "nsis": {
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
@@ -99,8 +135,22 @@
     }
   },
   "devDependencies": {
+    "@radix-ui/react-slot": "1.5.0",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/node": "22.20.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
     "electron": "33.4.11",
-    "electron-builder": "25.1.8"
+    "electron-builder": "25.1.8",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "tailwind-merge": "3.7.0",
+    "tailwindcss": "4.3.3",
+    "typescript": "7.0.2",
+    "vite": "8.3.5"
   },
   "dependencies": {
     "qrcode": "^1.5.4"

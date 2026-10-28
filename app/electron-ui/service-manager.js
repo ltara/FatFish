@@ -1,5 +1,5 @@
 /**
- * FatFish local service manager — start/stop local-server, backend (Win launcher), core.
+ * FatFish local service manager — start/stop backend (Win launcher) and core.
  * Core is forked with an IPC channel; its messages are cached here and re-emitted as "core-message".
  * User-facing strings must never name upstream components (see CLAUDE.md).
  */
@@ -13,9 +13,10 @@ const crypto = require("node:crypto");
 const { EventEmitter } = require("node:events");
 const { spawn, fork, execFile } = require("node:child_process");
 
+const channelConfig = require("../core/channel-config.cjs");
+
 const CORE_SHUTDOWN_GRACE_MS = 8000;
 
-const DEFAULT_SETTINGS_PORT = 8787;
 const DEFAULT_LOGIN_PORT = 6099;
 const DEFAULT_BACKEND_PORT = 3001;
 
@@ -26,13 +27,11 @@ const DEFAULT_BACKEND_PORT = 3001;
  *   phase: Phase,
  *   error: string|null,
  *   error_code: string|null,
- *   local_server: boolean,
  *   backend: boolean,
  *   core: boolean,
- *   settings_port: number,
  *   login_port: number,
  *   backend_port: number,
- *   pids: { local_server?: number, backend?: number, core?: number }
+ *   pids: { backend?: number, core?: number }
  * }}
  */
 function emptyState() {
@@ -40,10 +39,8 @@ function emptyState() {
     phase: "idle",
     error: null,
     error_code: null,
-    local_server: false,
     backend: false,
     core: false,
-    settings_port: DEFAULT_SETTINGS_PORT,
     login_port: DEFAULT_LOGIN_PORT,
     backend_port: DEFAULT_BACKEND_PORT,
     pids: {},
@@ -52,7 +49,7 @@ function emptyState() {
 
 /** Last-known Core snapshot, built from its IPC messages (see app/core/server.mjs header). */
 function emptyCore() {
-  return { engine: "stopped", engine_error: null, channels: {}, self: {}, stats: null, last_turn_error: null };
+  return { engine: "stopped", engine_error: null, engines: {}, channels: {}, self: {}, stats: null, last_turn_error: null, paused: true };
 }
 
 class ServiceManager extends EventEmitter {
@@ -66,13 +63,14 @@ class ServiceManager extends EventEmitter {
     this.resourcesPath = opts.resourcesPath || process.resourcesPath || "";
     this.electronExecPath = opts.electronExecPath || process.execPath;
     this._children = {
-      local_server: null,
       backend: null,
       core: null,
     };
     this._pids = {};
     this._state = emptyState();
     this._core = emptyCore();
+    this._coreRequests = new Map();
+    this._chatRequests = new Map();
     this._startPromise = null;
   }
 
@@ -96,12 +94,49 @@ class ServiceManager extends EventEmitter {
     }
   }
 
+  requestCore(type, payload = {}, timeoutMs = 10000) {
+    if (!["owners_get", "pairing_start", "pairing_cancel", "owner_remove", "channel_set", "memory_ui", "workspace_ui", "model_ui"].includes(type)) {
+      return Promise.resolve({ ok: false, error: "invalid_request" });
+    }
+    const requestId = crypto.randomUUID();
+    return new Promise((resolve) => {
+      const finish = (result) => {
+        clearTimeout(timer);
+        this._coreRequests.delete(requestId);
+        resolve(result);
+      };
+      const timer = setTimeout(() => finish({ ok: false, error: "core_timeout" }), timeoutMs);
+      this._coreRequests.set(requestId, finish);
+      if (!this.sendCore({ ...payload, type, requestId })) finish({ ok: false, error: "core_unavailable" });
+    });
+  }
+
+  _identityUnavailable() {
+    for (const finish of this._coreRequests.values()) finish({ ok: false, error: "core_unavailable" });
+    this.emit("identity-event", { type: "unavailable" });
+    for (const finish of this._chatRequests.values()) finish({ ok: false, error: "core_unavailable" });
+  }
+
   _onCoreMessage(m) {
     if (!m || typeof m !== "object") return;
     const core = this._core;
-    if (m.type === "engine") {
-      core.engine = m.state;
-      core.engine_error = m.error || null;
+    if (m.type === "ready") {
+      this.sendCore({ type: "pause", paused: this.readPaused() });
+    } else if (m.type === "paused") {
+      core.paused = !!m.paused;
+    } else if (m.type === "identity_result" || m.type === "channel_result" || m.type === "memory_result" || m.type === "workspace_result" || m.type === "model_result") {
+      this._coreRequests.get(m.requestId)?.(m);
+    } else if (m.type === "owners" || m.type === "pairing") {
+      this.emit("identity-event", m);
+    } else if (m.type === "engine") {
+      const instance = m.instance || "external";
+      core.engines[instance] = { state: m.state, error: m.error || null, crashCount: m.crashCount || 0, pid: m.pid || null };
+      // Preserve the existing home-page contract: it represents remote companionship.
+      if (instance === "external") {
+        core.engine = m.state;
+        core.engine_error = m.error || null;
+        if (m.state === "ready" && core.last_turn_error?.error === "engine_crashed") core.last_turn_error = null;
+      }
     } else if (m.type === "channel") {
       core.channels[m.id] = m.state;
     } else if (m.type === "self") {
@@ -111,12 +146,31 @@ class ServiceManager extends EventEmitter {
       core.stats = stats;
     } else if (m.type === "turn_error") {
       core.last_turn_error = { error: m.error, at: Date.now() };
+    } else if (m.type === "turn_end" && m.instance === "external" && m.ok) {
+      core.last_turn_error = null;
+    } else if (m.type === "chat_result") {
+      core.last_local_turn_error = m.ok ? null : { error: m.error, at: Date.now() };
+      this._chatRequests.get(m.id)?.(m);
     } else if (m.type === "approval" && this.listenerCount("approval") === 0) {
       // No approval UI attached yet (M4): fail closed.
       this.sendCore({ type: "approval_answer", id: m.id, outcome: "rejected" });
     }
     if (m.type === "approval") this.emit("approval", m);
+    if (m.type === "approval_closed") this.emit("approval-closed", m);
     this.emit("core-message", m);
+  }
+
+  chatTurn(sessionId, text) {
+    const id = crypto.randomUUID();
+    return new Promise((resolve) => {
+      const finish = (result) => { clearTimeout(timer); this._chatRequests.delete(id); resolve(result); };
+      const timer = setTimeout(() => {
+        this.sendCore({ type: "chat_cancel" });
+        finish({ ok: false, error: "turn_timeout" });
+      }, 185000);
+      this._chatRequests.set(id, finish);
+      if (!this.sendCore({ type: "chat_send", id, sessionId, text })) finish({ ok: false, error: "core_unavailable" });
+    });
   }
 
   /** Repo root (dev) or resources root (prod). */
@@ -155,62 +209,71 @@ class ServiceManager extends EventEmitter {
         onebot_url: "ws://127.0.0.1:3001",
         onebot_host: "127.0.0.1",
         onebot_port: DEFAULT_BACKEND_PORT,
-        settings_port: DEFAULT_SETTINGS_PORT,
         login_ui_port: DEFAULT_LOGIN_PORT,
+        owners: [],
+        channels: { qq: { enabled: false } },
         bind: "127.0.0.1",
       };
       fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2) + "\n", "utf8");
     }
 
-    try {
-      const personaLib = require("./persona-lib");
-      personaLib.ensurePersonaLib(root);
-    } catch {
-      const personaPath = path.join(root, "persona.txt");
-      if (!fs.existsSync(personaPath)) {
-        const ex = path.join(this.resolveBundleRoot(), "bridge", "persona.example.txt");
-        const exDev = path.join(this.resolveBundleRoot(), "app", "bridge", "persona.example.txt");
-        const src = fs.existsSync(ex) ? ex : fs.existsSync(exDev) ? exDev : null;
-        if (src) {
-          try {
-            fs.copyFileSync(src, personaPath);
-          } catch {
-            /* ignore */
-          }
-        }
-      }
-    }
-
+    require("./persona-lib").ensurePersonaLib(root);
     return this.readPorts();
   }
 
+  readPaused() {
+    try {
+      const file = path.join(this.appDataRoot, "runtime", "outbound_paused");
+      return fs.existsSync(file) && fs.readFileSync(file, "utf8").trim() === "1";
+    } catch { return true; }
+  }
+
+  readQqEnabled() {
+    try { return channelConfig.qqEnabled(channelConfig.readConfig(path.join(this.appDataRoot, "config.json"))); }
+    catch { return false; }
+  }
+
+  async setQqEnabled(enabled) {
+    const run = async () => {
+      const result = await this.requestCore("channel_set", { enabled }, 60000);
+      if (!result.ok) return result;
+      if (enabled) await this.startAll();
+      else {
+        const child = this._children.backend;
+        if (child) await this.killTree(child.pid, child);
+        this._children.backend = null;
+        this.clearPidFile("napcat");
+        this._state.backend = false;
+        this._state.login_reachable_hint = false;
+        if (this._state.core) { this._state.phase = "running"; this._state.error = null; this._state.error_code = null; }
+      }
+      return { ok: true, enabled, state: this.getState() };
+    };
+    const pending = (this._channelChange || Promise.resolve()).then(run, run);
+    this._channelChange = pending.catch(() => {});
+    return pending;
+  }
+
   readPorts() {
-    let settings = DEFAULT_SETTINGS_PORT;
     let login = DEFAULT_LOGIN_PORT;
     let backend = DEFAULT_BACKEND_PORT;
     try {
       const configPath = path.join(this.appDataRoot, "config.json");
       if (fs.existsSync(configPath)) {
         const j = JSON.parse(fs.readFileSync(configPath, "utf8"));
-        if (j.settings_port) settings = Number(j.settings_port) || settings;
         if (j.login_ui_port) login = Number(j.login_ui_port) || login;
         if (j.onebot_port) backend = Number(j.onebot_port) || backend;
       }
     } catch {
       /* ignore */
     }
-    if (process.env.FATFISH_SETTINGS_PORT) {
-      const n = Number(process.env.FATFISH_SETTINGS_PORT);
-      if (n) settings = n;
-    }
     if (process.env.FATFISH_LOGIN_PORT) {
       const n = Number(process.env.FATFISH_LOGIN_PORT);
       if (n) login = n;
     }
-    this._state.settings_port = settings;
     this._state.login_port = login;
     this._state.backend_port = backend;
-    return { settings, login, backend };
+    return { login, backend };
   }
 
   /**
@@ -298,8 +361,8 @@ class ServiceManager extends EventEmitter {
 
   /**
    * Paths layout:
-   *   Dev:  <repo>/app/shell/local-server.mjs, <repo>/app/core/server.mjs, <repo>/vendor/{napcat,dsh}
-   *   Prod: <resources>/shell/..., <resources>/core/..., <resources>/vendor/{napcat,dsh}
+   *   Dev:  <repo>/app/core/server.mjs and vendor runtime assets
+   *   Prod: <resources>/core/server.mjs and vendor runtime assets
    */
   resolvePaths() {
     const root = this.resolveBundleRoot();
@@ -313,12 +376,6 @@ class ServiceManager extends EventEmitter {
       return null;
     };
 
-    const localServer = candidates(
-      packaged
-        ? ["shell/local-server.mjs", "app/shell/local-server.mjs"]
-        : ["app/shell/local-server.mjs", "shell/local-server.mjs"]
-    );
-
     const coreJs = candidates(
       packaged
         ? ["core/server.mjs", "app/core/server.mjs"]
@@ -326,12 +383,11 @@ class ServiceManager extends EventEmitter {
     );
 
     const coreDir = coreJs ? path.dirname(coreJs) : null;
-    const shellDir = localServer ? path.dirname(localServer) : null;
 
     const napcatDir = this.resolveBackendDir(root);
     const nodeExe = this.resolveNodeExe(root);
 
-    return { root, localServer, coreJs, coreDir, shellDir, napcatDir, nodeExe };
+    return { root, coreJs, coreDir, napcatDir, nodeExe };
   }
 
   resolveBackendDir(root) {
@@ -413,83 +469,31 @@ class ServiceManager extends EventEmitter {
   }
 
   /**
-   * Spawn a .mjs with Electron-as-Node (preferred) or portable node.exe.
-   */
-  spawnNodeScript(scriptPath, cwd, logName) {
-    const logs = path.join(this.appDataRoot, "logs");
-    fs.mkdirSync(logs, { recursive: true });
-    const outPath = path.join(logs, `${logName}.log`);
-    const errPath = path.join(logs, `${logName}.err.log`);
-    const outFd = fs.openSync(outPath, "a");
-    const errFd = fs.openSync(errPath, "a");
-
-    const env = {
-      ...process.env,
-      FATFISH_APPDATA: this.appDataRoot,
-      FATFISH_SETTINGS_PORT: String(this._state.settings_port),
-      FATFISH_LOGIN_PORT: String(this._state.login_port),
-    };
-
-    /** @type {import('child_process').ChildProcess} */
-    let child;
-    // Prefer ELECTRON_RUN_AS_NODE so we do not require a separate Node install.
-    if (this.electronExecPath && fs.existsSync(this.electronExecPath)) {
-      child = spawn(this.electronExecPath, [scriptPath], {
-        cwd,
-        env: { ...env, ELECTRON_RUN_AS_NODE: "1" },
-        stdio: ["ignore", outFd, errFd],
-        windowsHide: true,
-        detached: false,
-      });
-    } else {
-      const nodeExe = this.resolvePaths().nodeExe || "node";
-      child = spawn(nodeExe, [scriptPath], {
-        cwd,
-        env,
-        stdio: ["ignore", outFd, errFd],
-        windowsHide: true,
-        detached: false,
-      });
-    }
-
-    try {
-      fs.closeSync(outFd);
-      fs.closeSync(errFd);
-    } catch {
-      /* ignore */
-    }
-
-    return child;
-  }
-
-  /**
    * Fork Core with an IPC channel (Electron-as-Node preferred, portable node.exe fallback).
    */
   forkCore(scriptPath, cwd) {
     const logs = path.join(this.appDataRoot, "logs");
     fs.mkdirSync(logs, { recursive: true });
-    const outFd = fs.openSync(path.join(logs, "core.log"), "a");
-    const errFd = fs.openSync(path.join(logs, "core.err.log"), "a");
-    const useElectron = this.electronExecPath && fs.existsSync(this.electronExecPath);
-    const execPath = useElectron ? this.electronExecPath : this.resolvePaths().nodeExe || "node";
-    const env = { ...process.env, FATFISH_APPDATA: this.appDataRoot };
-    if (useElectron) env.ELECTRON_RUN_AS_NODE = "1";
-
-    const child = fork(scriptPath, [], {
-      cwd,
-      env,
-      execPath,
-      stdio: ["ignore", outFd, errFd, "ipc"],
-      windowsHide: true,
-    });
+    let outFd, errFd;
     try {
-      fs.closeSync(outFd);
-      fs.closeSync(errFd);
-    } catch {
-      /* ignore */
-    }
-    child.on("message", (m) => this._onCoreMessage(m));
-    return child;
+      outFd = fs.openSync(path.join(logs, "core.log"), "a");
+      errFd = fs.openSync(path.join(logs, "core.err.log"), "a");
+      const useElectron = this.electronExecPath && fs.existsSync(this.electronExecPath);
+      const execPath = useElectron ? this.electronExecPath : this.resolvePaths().nodeExe || "node";
+      const env = { ...process.env, FATFISH_APPDATA: this.appDataRoot };
+      if (useElectron) env.ELECTRON_RUN_AS_NODE = "1";
+
+      const child = fork(scriptPath, [], {
+        cwd,
+        env,
+        execPath,
+        stdio: ["ignore", outFd, errFd, "ipc"],
+        windowsHide: true,
+      });
+      child.on("message", (m) => this._onCoreMessage(m));
+      child.once("disconnect", () => { if (this._children.core === child) this._identityUnavailable(); });
+      return child;
+    } finally { for (const fd of [outFd, errFd]) if (typeof fd === "number") { try { fs.closeSync(fd); } catch {} } }
   }
 
   /**
@@ -518,17 +522,19 @@ class ServiceManager extends EventEmitter {
       stdOut = fs.openSync(outPath, "w");
       stdErr = fs.openSync(errPath, "w");
     } catch {
+      for (const fd of [stdOut, stdErr]) if (typeof fd === "number") { try { fs.closeSync(fd); } catch {} }
       stdOut = "ignore";
       stdErr = "ignore";
     }
-    const child = spawn("cmd.exe", ["/c", launcher], {
-      cwd: napcatDir,
-      env: { ...process.env, FATFISH_APPDATA: this.appDataRoot },
-      stdio: ["ignore", stdOut, stdErr],
-      windowsHide: true,
-      detached: false,
-    });
-    return child;
+    try {
+      return spawn("cmd.exe", ["/c", launcher], {
+        cwd: napcatDir,
+        env: { ...process.env, FATFISH_APPDATA: this.appDataRoot },
+        stdio: ["ignore", stdOut, stdErr],
+        windowsHide: true,
+        detached: false,
+      });
+    } finally { for (const fd of [stdOut, stdErr]) if (typeof fd === "number") { try { fs.closeSync(fd); } catch {} } }
   }
 
   /**
@@ -547,17 +553,9 @@ class ServiceManager extends EventEmitter {
     if (!pid) return;
 
     if (process.platform === "win32") {
-      try {
-        execFile(
-          "taskkill",
-          ["/PID", String(pid), "/T", "/F"],
-          { windowsHide: true },
-          () => {}
-        );
-      } catch {
-        /* ignore */
-      }
-      return;
+      return new Promise((resolve) => {
+        execFile("taskkill", ["/PID", String(pid), "/T", "/F"], { windowsHide: true }, () => resolve());
+      });
     }
 
     try {
@@ -567,23 +565,6 @@ class ServiceManager extends EventEmitter {
     }
     try {
       process.kill(pid, "SIGTERM");
-    } catch {
-      /* ignore */
-    }
-  }
-
-  /**
-   * Best-effort: stop Win boot helper by name (never kill QQ itself).
-   */
-  killBackendHelpers() {
-    if (process.platform !== "win32") return;
-    try {
-      execFile(
-        "taskkill",
-        ["/IM", "NapCatWinBootMain.exe", "/F"],
-        { windowsHide: true },
-        () => {}
-      );
     } catch {
       /* ignore */
     }
@@ -602,6 +583,7 @@ class ServiceManager extends EventEmitter {
    * Start all services. Safe to call concurrently — coalesces.
    */
   async startAll() {
+    if (this._dataResetLocked) throw new Error("data_reset_locked");
     if (this._startPromise) return this._startPromise;
     this._startPromise = this._startAllImpl().finally(() => {
       this._startPromise = null;
@@ -617,47 +599,9 @@ class ServiceManager extends EventEmitter {
     const ports = this.ensureAppData();
     const paths = this.resolvePaths();
 
-    // --- 1) local-server (8787) ---
-    if (!(await this.probeTcp(ports.settings))) {
-      if (!paths.localServer) {
-        this._fail(
-          "missing_local_server",
-          "本机设置服务文件缺失。请重新安装客户端，或联系卖家获取完整安装包。"
-        );
-        return this.getState();
-      }
-      try {
-        const child = this.spawnNodeScript(paths.localServer, paths.shellDir, "local-server");
-        this._children.local_server = child;
-        if (child && child.pid) this.writePid("local-server", child.pid);
-        child.on("exit", () => {
-          this._children.local_server = null;
-          this.clearPidFile("local-server");
-        });
-      } catch (e) {
-        this._fail(
-          "spawn_local_server",
-          "无法启动本机设置服务。" + String(e && e.message ? e.message : e).slice(0, 80)
-        );
-        return this.getState();
-      }
-      const up = await this.waitForPort(ports.settings, 12000, "settings");
-      if (!up) {
-        // Port may be occupied by another instance
-        if (await this.probeTcp(ports.settings)) {
-          /* somehow up */
-        } else {
-          this._fail(
-            "port_settings",
-            `本机设置服务未就绪（端口 ${ports.settings}）。请检查是否被其他程序占用，关闭冲突程序后重新打开肥鱼。`
-          );
-          return this.getState();
-        }
-      }
-    }
-    this._state.local_server = await this.probeTcp(ports.settings);
-
-    // --- 2) backend login service (vendor launcher → login UI + ws :3001) ---
+    const qqEnabled = this.readQqEnabled();
+    if (qqEnabled) {
+    // --- 1) backend login service (vendor launcher → login UI + ws :3001) ---
     const backendAlready = await this.probeTcp(ports.backend);
     const loginAlready = await this.probeTcp(ports.login);
 
@@ -667,7 +611,7 @@ class ServiceManager extends EventEmitter {
           "missing_backend",
           "后台服务目录缺失。请重新安装完整客户端（安装包须包含后台组件）。"
         );
-        // Still try bridge/local; mark degraded
+        // Still start Core; channel setup remains available in degraded mode.
         this._state.phase = "degraded";
       } else if (process.platform !== "win32") {
         // Dev on Linux: cannot run Win launcher — leave backend down, not a hard fail for smoke
@@ -687,6 +631,7 @@ class ServiceManager extends EventEmitter {
             this._children.backend = child;
             if (child.pid) this.writePid("napcat", child.pid);
             child.on("exit", () => {
+              if (this._children.backend !== child) return;
               this._children.backend = null;
               this.clearPidFile("napcat");
             });
@@ -714,7 +659,12 @@ class ServiceManager extends EventEmitter {
       (await this.probeTcp(ports.backend)) || (await this.probeTcp(ports.login));
     this._state.login_reachable_hint = await this.probeTcp(ports.login);
 
-    // --- 3) core (engine + channels; connects ws://127.0.0.1:3001, reads AppData key/token) ---
+    } else {
+      this._state.backend = false;
+      this._state.login_reachable_hint = false;
+    }
+
+    // --- 2) core (engine + channels; connects ws://127.0.0.1:3001, reads AppData key/token) ---
     if (!paths.coreJs) {
       if (this._state.phase !== "degraded" && this._state.phase !== "error") {
         this._fail(
@@ -736,6 +686,8 @@ class ServiceManager extends EventEmitter {
             this.clearPidFile("core");
             this._state.core = false;
             this._core.engine = "stopped";
+            this._identityUnavailable();
+            this.emit("core-message", { type: "unavailable" });
           });
           this._state.core = true;
         } catch (e) {
@@ -752,33 +704,18 @@ class ServiceManager extends EventEmitter {
       }
     }
 
-    // Final phase
-    this._state.local_server = await this.probeTcp(ports.settings);
-    const loginUp = await this.probeTcp(ports.login);
-    const backendUp = await this.probeTcp(ports.backend);
+    // No channel is a valid local-only state; never probe or launch a disabled backend.
+    const loginUp = qqEnabled ? await this.probeTcp(ports.login) : false;
+    const backendUp = qqEnabled ? await this.probeTcp(ports.backend) : false;
     this._state.backend = backendUp || loginUp;
-
-    if (this._state.phase === "error") {
-      return this.getState();
-    }
-    if (this._state.local_server && this._state.core && this._state.backend) {
-      this._state.phase = "running";
-      this._state.error = null;
-      this._state.error_code = null;
-    } else if (this._state.local_server) {
-      if (this._state.phase !== "degraded") this._state.phase = "degraded";
-      if (!this._state.backend && !this._state.error) {
-        this._state.error_code = this._state.error_code || "backend_down";
-        this._state.error =
-          this._state.error ||
-          "本机设置服务已启动，但后台登录服务未就绪。请确认已安装官方 QQ 后，点「刷新状态」或重启肥鱼。";
-      }
-    } else {
-      this._fail(
-        "local_down",
-        `本机服务未能启动（端口 ${ports.settings}）。请检查端口占用后重开应用。`
-      );
-    }
+    this._state.login_reachable_hint = loginUp;
+    if (this._state.core && (!qqEnabled || this._state.backend)) {
+      this._state.phase = "running"; this._state.error = null; this._state.error_code = null;
+    } else if (this._state.core) {
+      this._state.phase = "degraded";
+      this._state.error_code ||= "backend_down";
+      this._state.error ||= "伙伴核心已启动，后台登录服务还没就绪。请确认已安装官方 QQ 后重试。";
+    } else this._fail("core_down", "伙伴核心未能启动，请重新打开肥鱼。");
 
     return this.getState();
   }
@@ -793,6 +730,7 @@ class ServiceManager extends EventEmitter {
    * Stop all managed children. Idempotent.
    */
   async stopAll() {
+    this._identityUnavailable();
     // Let Core shut its engine down cleanly (flushes session logs) before tree-killing.
     const core = this._children.core;
     if (core && core.exitCode === null && this.sendCore({ type: "shutdown" })) {
@@ -804,7 +742,6 @@ class ServiceManager extends EventEmitter {
 
     const fileMap = {
       core: "core",
-      local_server: "local-server",
       backend: "napcat",
     };
 
@@ -823,12 +760,12 @@ class ServiceManager extends EventEmitter {
       }
       const killPid =
         (child && child.pid) || filePid || this._pids[fileKey] || this._pids[name] || null;
-      this.killTree(killPid, child);
+      await this.killTree(killPid, child);
       this._children[name] = null;
       this.clearPidFile(fileKey);
     }
 
-    this.killBackendHelpers();
+
 
     // "bridge" kept for pid files left by pre-Core installs.
     for (const key of ["core", "bridge", "local-server", "napcat"]) {
@@ -846,11 +783,26 @@ class ServiceManager extends EventEmitter {
 
     this._pids = {};
     this._state.phase = "stopped";
-    this._state.local_server = false;
     this._state.backend = false;
     this._state.core = false;
     this._core = emptyCore();
     return this.getState();
+  }
+
+  async stopForDataReset() {
+    this._dataResetLocked = true;
+    // An already-starting backend must finish before stopping; no later start is permitted in this process.
+    if (this._startPromise) await this._startPromise.catch(() => {});
+    const children = Object.values(this._children).filter(Boolean);
+    await this.stopAll();
+    const deadline = Date.now() + 2000;
+    const alive = (child) => {
+      if (!child.pid) return false;
+      try { process.kill(child.pid, 0); return true; } catch (e) { if (e.code === "ESRCH") return false; throw e; }
+    };
+    while (children.some(alive) && Date.now() < deadline) await this.sleep(25);
+    if (children.some(alive)) throw new Error("data_reset_stop_failed");
+    return true;
   }
 
   /**
@@ -858,10 +810,11 @@ class ServiceManager extends EventEmitter {
    */
   async refreshProbes() {
     const ports = this.readPorts();
-    this._state.local_server = await this.probeTcp(ports.settings);
-    const loginUp = await this.probeTcp(ports.login);
-    const backendUp = await this.probeTcp(ports.backend);
+    const enabled = this.readQqEnabled();
+    const loginUp = enabled ? await this.probeTcp(ports.login) : false;
+    const backendUp = enabled ? await this.probeTcp(ports.backend) : false;
     this._state.backend = backendUp || loginUp;
+    this._state.login_reachable_hint = loginUp;
     this._state.core = !!(this._children.core && this._children.core.exitCode === null);
     return this.getState();
   }
@@ -869,7 +822,6 @@ class ServiceManager extends EventEmitter {
 
 module.exports = {
   ServiceManager,
-  DEFAULT_SETTINGS_PORT,
   DEFAULT_LOGIN_PORT,
   DEFAULT_BACKEND_PORT,
 };

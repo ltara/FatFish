@@ -1,6 +1,6 @@
 /**
- * 肥鱼人设库 — 本机持久化（AppData/personas.json）
- * 应用后同步 active body → persona.txt，供出站桥读取。
+ * 肥鱼人格库 — 本机持久化（AppData/personas.json）
+ * 应用后同步 active body → persona.txt；主进程通知伙伴核心重新加载。
  */
 "use strict";
 
@@ -8,12 +8,13 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const BUILTIN_ID = "builtin-dafeiyu";
+const SAMPLES_VERSION = 1;
 const BUILTIN = {
   id: BUILTIN_ID,
   title: "大肥鱼风",
   summary: "嘴碎靠谱、爱抬杠但不翻车",
   body:
-    "你是「大肥鱼」，主人的私人 QQ 伴侣。说话像损友：短句、带点抬杠和吐槽，但关键时刻靠谱温柔。" +
+    "你是「大肥鱼」，住在主人电脑里的 AI 伙伴。说话像损友：短句、带点抬杠和吐槽，但关键时刻靠谱温柔。" +
     "用简体中文回复；尽量控制在 1～3 句，除非主人明确要求展开。" +
     "不要自称官方 AI / 产品客服；不要提模型厂商或上游框架名。" +
     "遇到违法违规、危险自伤或泄露隐私的请求，明确拒绝并劝阻，语气仍保持熟人感。" +
@@ -27,7 +28,7 @@ const SAMPLE_PERSONAS = [
     title: "温柔倾听",
     summary: "慢半拍、先接住情绪再给建议",
     body:
-      "你是主人的私人 QQ 伴侣，语气温柔、耐心。先确认对方情绪，再简短给建议。" +
+      "你是住在主人电脑里的 AI 伙伴，语气温柔、耐心。先确认对方情绪，再简短给建议。" +
       "用简体中文；默认 1～3 句。不要提模型厂商或上游框架名。" +
       "遇到危险自伤、违法或隐私泄露请求，明确拒绝并劝阻。",
   },
@@ -36,7 +37,7 @@ const SAMPLE_PERSONAS = [
     title: "利落助理",
     summary: "短句直给、少废话、条理清楚",
     body:
-      "你是主人的私人 QQ 助理。回答短、准、可执行；先结论后要点。" +
+      "你是住在主人电脑里的 AI 伙伴。回答短、准、可执行；先结论后要点。" +
       "用简体中文；默认不超过 3 句。不要提模型厂商或上游框架名。" +
       "遇到危险自伤、违法或隐私泄露请求，明确拒绝并劝阻。",
   },
@@ -48,10 +49,6 @@ function personasJsonPath(root) {
 
 function legacyPersonaPath(root) {
   return path.join(root, "persona.txt");
-}
-
-function personaRevPath(root) {
-  return path.join(root, "runtime", "persona_rev");
 }
 
 function nowIso() {
@@ -66,14 +63,14 @@ function summarize(body, title) {
   const t = String(body || "")
     .replace(/\s+/g, " ")
     .trim();
-  if (!t) return title || "（空人设）";
+  if (!t) return title || "（空人格）";
   return t.length > 36 ? t.slice(0, 36) + "…" : t;
 }
 
 function normalizeItem(raw) {
   if (!raw || typeof raw !== "object") return null;
   const id = String(raw.id || "").trim();
-  const title = String(raw.title || "").trim() || "未命名人设";
+  const title = String(raw.title || "").trim() || "未命名人格";
   const body = String(raw.body || "");
   const summary = String(raw.summary || "").trim() || summarize(body, title);
   const updatedAt = String(raw.updatedAt || nowIso());
@@ -84,7 +81,7 @@ function normalizeItem(raw) {
 
 function builtinStore() {
   const items = SAMPLE_PERSONAS.map((x) => ({ ...x, updatedAt: nowIso(), lastAppliedAt: "" }));
-  return { activePersonaId: items[0].id, items };
+  return { samplesVersion: SAMPLES_VERSION, activePersonaId: items[0].id, items };
 }
 
 function migrateFromLegacy(root) {
@@ -95,7 +92,7 @@ function migrateFromLegacy(root) {
       const text = fs.readFileSync(p, "utf8");
       if (text && text.trim() && text.trim() !== BUILTIN.body.trim()) {
         const id = makeId();
-        const title = "我的人设";
+        const title = "我的人格";
         const item = {
           id,
           title,
@@ -126,17 +123,17 @@ function readStore(root) {
         writeStore(root, s);
         return s;
       }
-      // 补齐示例人设（不覆盖用户已有同 id）
-      let changed = false;
-      for (const sample of SAMPLE_PERSONAS) {
+      // Only migrate legacy libraries once. Re-seeding on every read resurrects a user's deletion.
+      const seeded = Number.isSafeInteger(j.samplesVersion) && j.samplesVersion >= SAMPLES_VERSION;
+      const changed = !seeded;
+      if (!seeded) for (const sample of SAMPLE_PERSONAS) {
         if (!items.some((x) => x.id === sample.id)) {
           items.push({ ...sample, updatedAt: nowIso(), lastAppliedAt: "" });
-          changed = true;
         }
       }
       let active = String(j.activePersonaId || "");
       if (!items.some((x) => x.id === active)) active = items[0].id;
-      const store = { activePersonaId: active, items };
+      const store = { samplesVersion: seeded ? j.samplesVersion : SAMPLES_VERSION, activePersonaId: active, items };
       if (changed) writeStore(root, store);
       return store;
     }
@@ -152,6 +149,7 @@ function writeStore(root, store) {
   fs.mkdirSync(root, { recursive: true });
   fs.mkdirSync(path.join(root, "runtime"), { recursive: true });
   const clean = {
+    samplesVersion: Number.isSafeInteger(store.samplesVersion) && store.samplesVersion >= SAMPLES_VERSION ? store.samplesVersion : SAMPLES_VERSION,
     activePersonaId: store.activePersonaId,
     items: store.items.map(normalizeItem).filter(Boolean),
   };
@@ -168,9 +166,7 @@ function syncActiveFiles(root, store) {
   const active = getActiveItem(store);
   const body = active && active.body ? active.body : BUILTIN.body;
   fs.writeFileSync(legacyPersonaPath(root), body.endsWith("\n") ? body : body + "\n", "utf8");
-  const rev = String(Date.now());
-  fs.writeFileSync(personaRevPath(root), rev + "\n", "utf8");
-  return { body, rev, active };
+  return { body, active };
 }
 
 function listPersonas(root) {
@@ -207,7 +203,7 @@ function getPersona(root, id) {
 
 function createPersona(root, payload) {
   const store = readStore(root);
-  const title = String((payload && payload.title) || "").trim() || "未命名人设";
+  const title = String((payload && payload.title) || "").trim() || "未命名人格";
   const body = String((payload && payload.body) || "");
   const summary =
     String((payload && payload.summary) || "").trim() || summarize(body, title);
@@ -266,7 +262,7 @@ function deletePersona(root, id, confirmed) {
       ok: true,
       restoredBuiltin: true,
       activePersonaId: fresh.activePersonaId,
-      message: "人设已清空，已恢复内置「大肥鱼风」。",
+      message: "人格已清空，已恢复内置「大肥鱼风」。",
     };
   }
   if (wasActive) {
@@ -279,7 +275,7 @@ function deletePersona(root, id, confirmed) {
     switched: wasActive,
     activePersonaId: store.activePersonaId,
     message: wasActive
-      ? "已删除使用中的人设，并切换到「" +
+      ? "已删除使用中的人格，并切换到「" +
         (getActiveItem(store) || {}).title +
         "」。"
       : "已删除。",
@@ -300,7 +296,7 @@ function applyPersona(root, id) {
     ok: true,
     activePersonaId: id,
     activeTitle: it.title,
-    message: "已应用「" + it.title + "」。下一句私聊起按新人设回复（对话记忆已重置）。",
+    message: "已应用「" + it.title + "」。下一句起生效。",
   };
 }
 
@@ -310,7 +306,7 @@ function importFromText(text) {
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter(Boolean);
-  let title = "导入的人设";
+  let title = "导入的人格";
   if (lines.length) {
     const first = lines[0].replace(/^#+\s*/, "").slice(0, 24);
     if (first) title = first;

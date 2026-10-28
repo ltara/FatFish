@@ -1,0 +1,41 @@
+/** 单色设计系统契约。只读源码/生成资源，不启动应用、不访问用户数据或网络。 */
+"use strict";
+const assert = require("node:assert/strict"), fs = require("node:fs"), path = require("node:path");
+const root = path.resolve(__dirname, ".."), read = p => fs.readFileSync(path.join(root, p), "utf8");
+const app = read("renderer-src/App.tsx"), css = read("renderer/styles.css"), theme = read("renderer-src/shadcn.css"), html = read("renderer/index.html");
+const design = fs.readFileSync(path.join(root, "../../DESIGN.md"), "utf8");
+let count = 0;
+const check = (name, ok) => { assert.ok(ok, name); count++; console.log("PASS " + name); };
+function token(name) {
+  const match = css.match(new RegExp("--" + name + ":\\s*([^;]+);"));
+  assert.ok(match, "token exists: " + name);
+  return match[1].trim().startsWith("var(") ? token(match[1].trim().slice(6, -1)) : match[1].trim();
+}
+check("design has one current specification and names the requested reference", design.includes("单色伙伴界面，第 3 版") && design.includes("https://open-design.ai/plugins/design-system-shadcn/") && !design.includes("## 0.") && !design.includes("不引入前端框架"));
+check("actions, navigation and type share neutral foreground", token("primary") === token("text") && token("primary-text") === token("text") && token("sidebar-text-strong") === token("text"));
+check("sidebar is a quiet secondary surface, not a competing dark panel", token("sidebar") === token("surface-2") && token("sidebar") === "#FAFAFA");
+check("hover and selection remain distinct", token("sidebar-active") !== token("sidebar-hover"));
+check("neutral focus does not reuse warning or brand color", token("focus-ring") === "#52525B" && token("focus-ring") !== token("warn"));
+check("control, surface and dialog radii have a single numeric source", token("radius-sm") === "6px" && token("radius") === "8px" && token("radius-lg") === "12px" && !/--radius-(?:sm|md|lg):\s*\d/.test(theme));
+check("components receive semantic tokens rather than their own palette", theme.includes("--color-primary: var(--primary)") && theme.includes("--color-input: var(--border-strong)") && !/#[\da-f]{3,8}\b/i.test(theme));
+check("brand uses the same local sans family without replacing approved artwork", !css.includes("Songti") && !css.includes("Georgia") && app.includes('src="../assets/icon.png"') && app.includes('width={32}'));
+check("compact view does not enlarge or shrink the brand type", (css.match(/--font-brand:/g) || []).length === 1 && token("font-brand") === "16px");
+check("home has one primary entry beside its page title", /<h2>首页<\/h2><Button[^>]*id="btn-home-chat"/.test(app) && (app.match(/id="btn-home-chat"/g) || []).length === 1);
+check("home summary is open content, not a decorative filled card", /\.home-overview\s*\{[^}]*padding:/.test(css) && !/\.home-overview\s*\{[^}]*(?:background:|border-radius:)/.test(css));
+check("persona toolbar has one full-height create action", /<Button\b[^>]*size="default"[^>]*id="btn-persona-new"[^>]*className="btn-primary"/.test(app));
+check("persona editors are open forms without another card border", /\.form-card\s*\{[^}]*padding:\s*0;[^}]*border:\s*0;/.test(css));
+check("search has the shared height and retains its accessible label", /\.persona-toolbar \.persona-search\s*\{[^}]*height:\s*var\(--control-h\)/.test(css) && app.includes('aria-label="搜索人格库"'));
+check("memory scope group retains native button selection semantics", app.includes('className="memory-scopes" role="group"') && (app.match(/data-memory-scope=/g) || []).length === 3 && app.includes('aria-pressed="true"'));
+check("memory selected segment is visibly bounded without colored underline", /\.memory-scopes button\[aria-pressed="true"\]\s*\{[^}]*border-color:\s*var\(--border\);[^}]*background:\s*var\(--surface\)/.test(css) && !css.includes('.memory-scopes button[aria-pressed="true"]::after'));
+check("memory refresh is grouped with the page heading rather than an empty count row", /<h2>记忆<\/h2><Button[^>]*id="btn-memory-refresh"/.test(app));
+check("provider and model share a responsive field group", /className="model-fields"[\s\S]*id="model-provider"[\s\S]*id="model-name"[\s\S]*id="model-custom-fields"/.test(app) && css.includes("grid-template-columns: repeat(2, minmax(0, 1fr))"));
+check("custom endpoint remains full width and onboarding remains one column", css.includes(".model-fields > #model-custom-fields { grid-column: 1 / -1; }") && css.includes(".onboard-card .model-fields { grid-template-columns: minmax(0, 1fr); }"));
+check("onboarding uses its own model heading without a repeated subsection title", css.includes(".onboard-card #settings-model > .settings-block-title { display: none; }"));
+check("model action warnings remain adjacent and associated", ["model-change-note", "model-test-note", "model-reload-note"].every(id => app.includes('aria-describedby="' + id + '"')));
+check("switch transitions move a transform, not layout offsets", /\.switch-ui::after\s*\{[^}]*transition:\s*transform/.test(css) && css.includes("transform: translateX(16px)") && !css.includes("transition: left"));
+check("QR covering text keeps explicit dark/light contrast after sidebar change", /\.qr-overlay\s*\{[^}]*background:\s*var\(--primary\);[^}]*color:\s*var\(--primary-ink\)/.test(css));
+check("dialog and composer use the same large-radius source", [".chat-composer", ".onboard-card", ".pairing-card"].every(selector => css.includes(selector) && new RegExp(selector.replaceAll(".", "\\.") + "\\s*\\{[^}]*border-radius:\\s*var\\(--radius-lg\\)").test(css)));
+check("first frame still fails closed before real activation", html.includes('<body class="activation-locked">') && html.includes('style="visibility:hidden"') && css.includes("body.activation-locked #main-app"));
+check("no first-frame controls were duplicated by the new layout", (() => { const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]); return ids.length === new Set(ids).size; })());
+check("design keeps explicit user-operated native acceptance", design.includes("原生与真实业务由用户手动验收") && design.includes("不连 QQ、不调用模型"));
+console.log(`${count}/${count} design system checks passed (source/resource contracts, no native UI/network)`);

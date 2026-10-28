@@ -28,10 +28,10 @@ if (!fs.existsSync(serviceMgr)) {
 }
 
 const coreDir = path.join(root, "..", "core");
-const coreFiles = ["server.mjs", "engine-host.mjs", "router.mjs", "dsh-client.mjs", "paths.mjs", "channels/qq.mjs"]
+const coreFiles = ["license-trust.cjs", "license-gate.cjs", "device-fingerprint.cjs", "server.mjs", "channel-config.cjs", "model-config.cjs", "model-service.mjs", "engine-host.mjs", "turn-errors.mjs", "instance-manager.mjs", "gateway.mjs", "identity.mjs", "router.mjs", "dsh-client.mjs", "paths.mjs", "channels/qq.mjs", "profiles/plugins/fatfish-approval.mjs"]
   .map((f) => path.join(coreDir, f));
 
-for (const p of [mainJs, preload, serviceMgr, path.join(root, "renderer", "renderer.js"), ...coreFiles]) {
+for (const p of [mainJs, preload, serviceMgr, path.join(root, "chat-store.js"), path.join(root, "activation-display.js"), path.join(root, "scripts", "activation-display-check.js"), path.join(root, "data-clear.js"), path.join(root, "renderer", "data-clear-view.js"), path.join(root, "renderer", "persona-actions.js"), path.join(root, "onboarding-store.js"), path.join(root, "reminder-inbox.js"), path.join(root, "reminder-controller.js"), path.join(root, "renderer", "chat-render.js"), path.join(root, "renderer", "memory-view.js"), path.join(root, "renderer", "model-view.js"), path.join(root, "renderer", "activation-view.js"), path.join(root, "renderer", "onboarding-view.js"), path.join(root, "renderer", "renderer.js"), path.join(root, "renderer", "status-view.js"), ...coreFiles]) {
   const r = spawnSync(process.execPath, ["--check", p], { encoding: "utf8" });
   if (r.status !== 0) {
     console.error("syntax fail", p, r.stderr || r.stdout);

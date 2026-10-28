@@ -1,0 +1,124 @@
+{
+  "approvalDate": "2026-10-28",
+  "source": "docs/brand/logo-approved-20261028.png",
+  "sourceSha256": "465633a4d2952b772added6fa48e64fbca715fb13f61ccaac6344ba6107e7636",
+  "sourceSize": [
+    1536,
+    1024
+  ],
+  "cropBox": [
+    555,
+    244,
+    990,
+    685
+  ],
+  "nativePaddedSize": 441,
+  "method": "approved crop, external-edge alpha recovery and proportional resize; no redrawing",
+  "alphaRecovery": {
+    "outsidePixelsRemoved": 8887,
+    "boundaryPixelsUnmatted": 1638
+  },
+  "trayStatusPalette": {
+    "ok": [
+      47,
+      158,
+      100
+    ],
+    "warn": [
+      201,
+      162,
+      39
+    ],
+    "bad": [
+      196,
+      86,
+      74
+    ],
+    "info": [
+      90,
+      143,
+      168
+    ]
+  },
+  "outputs": [
+    {
+      "file": "icon.png",
+      "width": 512,
+      "height": 512,
+      "sha256": "98e58ba5fb6e610af975b56c5b389693bcc7ec5cc2bbf06c094f959d00d30fba"
+    },
+    {
+      "file": "icon.ico",
+      "sizes": [
+        16,
+        24,
+        32,
+        48,
+        64,
+        128,
+        256
+      ],
+      "sha256": "38c293e4ce9594fa0c588ad84d101932e048c4e3956e301136cf9ba7b011d7d5"
+    },
+    {
+      "file": "tray.png",
+      "width": 16,
+      "height": 16,
+      "sha256": "9f816c2c4f751916e50ceee645e6a6c691ad3aa0d5ef6fb1e413df5cbbab43c3"
+    },
+    {
+      "file": "tray-ok.png",
+      "width": 16,
+      "height": 16,
+      "sha256": "90f2d658aaafb6e154fa0ed7efb1b7febd8ea99c289a8a2b32ac68a055663abb"
+    },
+    {
+      "file": "tray-warn.png",
+      "width": 16,
+      "height": 16,
+      "sha256": "74351f53d35b0c6a5056ed2760838971d8c50e8d9ff2425d1466865fb86628ec"
+    },
+    {
+      "file": "tray-bad.png",
+      "width": 16,
+      "height": 16,
+      "sha256": "d6ed9546e3f94ebfc0adbedd7ee98fd09e327f9ddfb932c4a8f5417d5ddd9e67"
+    },
+    {
+      "file": "tray-info.png",
+      "width": 16,
+      "height": 16,
+      "sha256": "2bae4b9427f07fb632c4f3c0fd3e4177a33fcea18b77ee3549c3dee2fe035934"
+    },
+    {
+      "file": "tray@2x.png",
+      "width": 32,
+      "height": 32,
+      "sha256": "8640d59693bdb344885edef23f8c981560cd4356ab4306945d1e924d9691e987"
+    },
+    {
+      "file": "tray-ok@2x.png",
+      "width": 32,
+      "height": 32,
+      "sha256": "fd09c392ccff9aab13a3a7129292b71c24ed506661e6e92992bd9c0d229cff23"
+    },
+    {
+      "file": "tray-warn@2x.png",
+      "width": 32,
+      "height": 32,
+      "sha256": "ac8c2c8b7d5cad51d2900b3286a440aa698fc28893f1f4aa38a6b0babd6dc05c"
+    },
+    {
+      "file": "tray-bad@2x.png",
+      "width": 32,
+      "height": 32,
+      "sha256": "ea7be797a2c4e518e7eab054141e1da519aa59313e08d4cdd0a6037b61323af1"
+    },
+    {
+      "file": "tray-info@2x.png",
+      "width": 32,
+      "height": 32,
+      "sha256": "b4735478b68370dc6a284e7afc4188771e7f888bd1e618e7190133183b1c5d82"
+    }
+  ]
+}

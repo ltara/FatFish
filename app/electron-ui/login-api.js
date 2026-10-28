@@ -388,7 +388,7 @@ function looksLikePhoneVerify(loginError, message) {
 
 
 /**
- * After QQ login: ensure local WS server :3001 is enabled so the reply bridge can connect.
+ * After QQ login: ensure local WS server :3001 is enabled so the reply channel can connect.
  * Uses AppData local_token as WS token. Idempotent. Never logs secrets.
  * @param {{ credential: string, port?: number, localToken: string, host?: string, wsPort?: number }} opts
  * @returns {Promise<{ ok: boolean, changed?: boolean, error?: string }>}

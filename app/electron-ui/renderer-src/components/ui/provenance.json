@@ -1,0 +1,52 @@
+[
+  {
+    "component": "button",
+    "url": "https://ui.shadcn.com/r/styles/new-york-v4/button.json",
+    "originalSha256": "79dd6f75f8136394442202d6b8b922fb269eaad0a5dba579397c9d5b41f893bb",
+    "adaptations": [
+      "local cn alias",
+      "standalone slot package",
+      "inline chevron instead of icon library"
+    ]
+  },
+  {
+    "component": "input",
+    "url": "https://ui.shadcn.com/r/styles/new-york-v4/input.json",
+    "originalSha256": "0c9457181f6ddc80969bcf854e92c362903a55b6e889fbef3fd85343ecc4af5b",
+    "adaptations": [
+      "local cn alias",
+      "standalone slot package",
+      "inline chevron instead of icon library"
+    ]
+  },
+  {
+    "component": "textarea",
+    "url": "https://ui.shadcn.com/r/styles/new-york-v4/textarea.json",
+    "originalSha256": "5cafcfeeee29534f449387a16b585f5923d2faab1a0cdc50a874416b175f59ce",
+    "adaptations": [
+      "local cn alias",
+      "standalone slot package",
+      "inline chevron instead of icon library"
+    ]
+  },
+  {
+    "component": "badge",
+    "url": "https://ui.shadcn.com/r/styles/new-york-v4/badge.json",
+    "originalSha256": "13a9380dfff853ee730c14a52df49f22aecd31f40f2998d7c1e7ec458b6e1650",
+    "adaptations": [
+      "local cn alias",
+      "standalone slot package",
+      "inline chevron instead of icon library"
+    ]
+  },
+  {
+    "component": "native-select",
+    "url": "https://ui.shadcn.com/r/styles/new-york-v4/native-select.json",
+    "originalSha256": "4bdbce5575dce610fed747df4547a3d494713f4df8d28e09b3ccee62e4d72f93",
+    "adaptations": [
+      "local cn alias",
+      "standalone slot package",
+      "inline chevron instead of icon library"
+    ]
+  }
+]

@@ -7,6 +7,10 @@ AppData/
 runtime/
 logs/
 *.log
+.dev.vars
+.dev.vars.*
+.wrangler/
+activation-server/.local/
 
 # build outputs
 dist/
@@ -31,3 +35,6 @@ app/shell/node_modules/
 app/electron-ui/node_modules/
 app/electron-ui/dist/
 app/electron-ui/out/
+
+# Machine-local development shortcut (absolute paths; regenerated from scripts/)
+/肥鱼（开发版）.lnk

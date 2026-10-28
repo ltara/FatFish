@@ -1,0 +1,20 @@
+{
+  "name": "fatfish-release-tools",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Build-only protection and artifact checks; never shipped to clients",
+  "scripts": {
+    "check": "node --check protection.cjs && node --check before-pack.cjs && node --check after-pack.cjs && node --check after-sign.cjs && node --check protection-check.cjs && node --check verify-artifact.cjs && node --check package-fixture.cjs && node --check package-check.cjs && node --check packaged-probe.cjs",
+    "test": "node protection-check.cjs",
+    "package:prepare": "node package-fixture.cjs",
+    "package:test": "node package-check.cjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@electron/asar": "3.4.1",
+    "javascript-obfuscator": "4.1.1",
+    "resedit": "1.7.2"
+  }
+}

@@ -18,8 +18,7 @@ Windows 免托管纯客户端。对外交付物名称：**FatFish-Setup.exe**（
 | `docs/DEV.md` | 开发内部说明 |
 | `docs/ELECTRON.md` | **Electron 正式 UI** 开发与云机打包要点 |
 | `app/electron-ui/` | **正式桌面壳**（Electron，状态/设置/登录） |
-| `app/shell/` | `local-server.mjs` |
-| `app/bridge/` | 本地智能回复引擎（读 `%AppData%\FatFish`） |
+| `app/core/` | 伙伴核心、隔离引擎、消息路由和插件网关 |
 | `scripts/` | fetch-vendor / start / stop / doctor |
 | `vendor/` | 构建时下载（`MANIFEST.txt` 入库；二进制忽略） |
 
@@ -37,4 +36,4 @@ Windows 免托管纯客户端。对外交付物名称：**FatFish-Setup.exe**（
 
 ## 快速构建（Windows）
 
-见 `docs/ELECTRON.md`。摘要：`fetch-vendor` → `npm install`（bridge）→ `npm run dist`（`app/electron-ui`，仅 Windows）。
+见 `docs/ELECTRON.md`。摘要：`fetch-vendor` → `npm install`（`app/core`）→ `npm run dist`（`app/electron-ui`，仅 Windows）。

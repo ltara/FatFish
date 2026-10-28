@@ -4,6 +4,8 @@
 > 每个任务都写了**交付物**和**验收标准**。验收没有通过，就不算完成，也不要开始依赖它的下一步。
 > 「不做补丁更新」意味着 v1 交付时的功能就是最终状态：**M3～M6 全部完成后才能交付 v1**，v1.x 和 v2 都以新版本安装包的形式发布（商业规则见 ARCHITECTURE D-9）。
 
+> 2026-10-25 使用方式澄清：QQ 是可选渠道，不能成为本机使用的登录门槛。新增安装默认只在本机使用；QQ 的风险确认、登录和配对仅在主动启用渠道时出现。M3-E 真机验收仍是 QQ 交付门禁，不删除、不用夹具替代；M3-A～D 已通过的隔离/Core 门禁允许继续开发独立的本机功能和激活，涉及 QQ 的验收仍必须等待 M3-E，整个 M5 目标不因此提前算完成。
+
 ## 总览
 
 | 阶段 | 主题 | 状态 | 依赖 |
@@ -11,9 +13,9 @@
 | M0 | 体积闸门 | ✅（结论已被 M2 推翻） | — |
 | M1 | 本机助手侧载（headless） | ✅（方案作废，M3-C 删除） | — |
 | M2 | DSH 技术验证 | ✅ `docs/M2_DSH.md` | — |
-| M3 | 核心重构：Core、三实例框架、配对、去掉旧路径 | 🔶 第 1、2 步完成 | M2 |
-| M4 | 伙伴能力：记忆、提醒、人格、本机对话与审批、模型切换 | ⬜ | M3 |
-| M5 | 激活与首次向导 | ⬜ | M3（可与 M4 并行） |
+| M3 | 核心重构：Core、三实例框架、配对、去掉旧路径 | 🔶 第 1、2 步及 M3-A～M3-D 完成，下一步 M3-E 真机验收 | M2 |
+| M4 | 伙伴能力：记忆、提醒、人格、本机对话与审批、模型切换 | 🔶 QQ 可选、本机对话及审批已实现并通过本地验收，其余进行中 | 本机部分 M3-A～D；QQ 部分 M3-E |
+| M5 | 激活与首次向导 | 🔶 M5-1～5 代码/后台或资源夹具已接；原生 UI、真实 QQ 和正式安装包门禁未完成 | M3-A～D；QQ 向导分支 M3-E（可与 M4 并行） |
 | M6 | 交付：打包、干净系统实测、文档 | ⬜ | M4、M5 |
 | **v1 交付** | | | |
 | v1.x | 转交任务、多平台、陌生人陪聊、群聊、图片和语音、主动问候、换机迁移 | ⬜ | v1 |
@@ -33,25 +35,29 @@
 
 ### M3-A 三实例框架 + 对外实例无工具（**最高优先级**）
 
+**2026-10-25 已完成并验收，当前工作区尚未提交。** v1 落地 external/local；auto 仍留给 v2。无付费契约 38/38、Electron-as-Node e2e 28/28、Electron 窗口 smoke、两实例 privacy 均通过，见 HANDOFF §4。下列任务是本轮基线，已不再是待办。
+
 在这一步完成之前，不能让真实 QQ 渠道放行任何人。
 
 任务：
-1. 把 `app/core/profile/` 拆成 `profiles/common.patch.yml`（隐私、隔离、人格、时区）和 `profiles/fatfish-external/`、`profiles/fatfish-local/`（`fatfish-auto/` 等到 v2 再加）。EngineHost 启动时加上 `--patch <common>`；先确认 `DshClient` 支持传入额外参数（现在只传了 `--profile`，需要扩展）。
+1. 已拆为 `profiles/common.patch.yml`（隐私、隔离、人格、时区）和 `profiles/fatfish-external/`、`profiles/fatfish-local/`（`fatfish-auto/` 等到 v2 再加）。DshClient 支持额外参数，EngineHost 使用 `--profile <name> --patch <common绝对路径>`，已用 rc2 dump-config 实测 overlay 生效。
 2. `fatfish-external` 补丁：把 ARCHITECTURE §4.2 表中所有工具行设为 `disabled: true`；`sandbox-policy.config.mode` 固定为 `'read-only'`；工作目录 `workspace/external`。每改一行都要用 `spikes/m2-dsh/pending.mjs` 确认没有插件卡在 pending，因为关掉一行可能连带让依赖它的行无法激活，**被连带的行必须一并列出来并逐一确认**。
 3. 新建 `instance-manager.mjs`：按名字管理多个 EngineHost（`external` 常驻预热；`local` 按需启动、空闲 10 分钟停止）。EngineHost 增加构造参数 `{ name, profile, dshHome, workspace, extraPatches }`。
 4. 新建 `gateway.mjs`：把审批回环服务从 EngineHost 中抽出来，变成统一的插件网关 `POST { plugin, op, sessionId, args }`，并按发起请求的实例分发（每个实例一个 token，Core 通过 token 识别调用来自哪个实例）。`fatfish-approval.mjs` 改用这个统一格式。
 5. Router：外部渠道的消息只送 `external` 实例的 `owner-main` 会话，并在消息前加 `[来自 QQ]`。
 6. 人格后缀按实例区分（对外：「你在聊天渠道里，不能操作电脑……」；本机：「记忆请用记忆工具，不要写文件」）。
-7. 数据迁移：M3 第 1、2 步时 DSH_HOME 是 `dsh/`（单实例），旧会话要迁到 `dsh/external`（直接移动 `sessions/`，`session_id` 从 `owner-qq-<号>` 改名为 `owner-main`。如果改名麻烦，就保留旧 id，并在 Router 里写一个兼容映射。开发阶段也可以直接清掉旧数据，因为还没有用户）。
+7. 数据迁移已采用保留旧 id 的兼容映射：复制旧 `dsh/sessions` 到 `dsh/external/sessions`，保留原件、不覆盖新数据；`dsh/external/legacy-session.json` 映射原主人会话。新安装使用 `owner-main`。
 
 验收（全部写进 `app/core/dev/e2e.mjs`）：
-- **对外实例的实测请求体里，`tools[].name` 严格等于白名单**（现阶段为空集）。做法：把 `spikes/m2-dsh/run.mjs` 里的录制代理搬进 e2e，通过 `FATFISH_DEV_DEEPSEEK_BASE_URL` 把请求导向代理（EngineHost 已支持这个变量）。
+- **对外实例的实测请求体里，`tools[].name` 严格等于白名单**（M3-A 当时为空集；M4 当前为 Core 自有记忆工具，见 M4_MEMORY）。做法：把 `spikes/m2-dsh/run.mjs` 里的录制代理搬进 e2e，通过 `FATFISH_DEV_DEEPSEEK_BASE_URL` 把请求导向代理（EngineHost 已支持这个变量）。
 - 主人在 QQ 上说「读一下系统目录里 win.ini（%WINDIR% 下）的内容」→ 回复中不含文件内容，也没有任何 `tool/call` 事件。
 - 主人说「访问 http://127.0.0.1:6099」→ 没有 `tool/call`。
 - 本机实例（经 IPC 的测试入口）仍然能触发审批，拒绝后文件未写入（沿用现有用例）。
 - 原有 15 项全部通过。
 
 ### M3-B 身份与配对码
+
+**2026-10-25 已完成并验收，当前工作区尚未提交。** D-1 按推荐方案执行，待确认。身份/IPC 检查 43/43、桌面联调 23/23（两组均连续 3 次通过），M3-A 无付费契约 38/38 通过；无真实 QQ 或付费模型调用。独立评审工具不可见测试原生窗口，降级为静态走查，不能视为独立交互验收；主 Agent 的 Electron 联调另有完整可复跑证据。详见 HANDOFF。
 
 任务：
 1. `identity.mjs`：`owners` 的读写、迁移（`owner_qq` 转成 `owners[0]`）；配对码的生成、校验、过期、尝试次数限制（ARCHITECTURE §6.1）。
@@ -65,6 +71,8 @@
 
 ### M3-C 去掉旧路径
 
+**2026-10-25 已完成并验收，当前工作区尚未提交。** cleanup-check 12/12、跨两个真实 Electron 进程的 lifecycle-ui 11/11、contracts 38/38、identity-check 43/43、pairing-ui 23/23、smoke 与 PowerShell 5.1 语法检查均通过；均为无付费、本地夹具。详见 HANDOFF。
+
 任务：
 1. 删除 `app/shell/`（8787）。`service-manager` 去掉第 1 步；`main.js` 的 `get-status` 不再探测 8787，`save-api-key` 不再 POST 到 8787；`electron-ui/package.json` 的 `extraResources` 去掉 `shell`；`scripts/start.ps1`、`stop.ps1`、`doctor.ps1` 同步修改。状态判定从「local_server && core && backend」改成「core && backend」。
 2. 删除 `app/bridge/`（包括 `agent-adapter.mjs` 和 `persona.example.txt`）。`service-manager.ensureAppData()` 里引用的 `bridge/persona.example.txt` 改为由 `persona-lib` 内置默认人设。
@@ -76,6 +84,8 @@
 验收：`npm run smoke` 通过；真实启动 Electron 后首页状态正确；暂停后重启 Electron 仍是暂停状态；应用人设后下一句话就体现新人格（e2e 增加用例：修改 `personas.json` 后发 `reload`，再验证新人格生效）；`grep -r "8787\|bridge\|agent_engine" app/` 没有残留（「bridge」只允许出现在 `stopAll` 清理旧 pid 的兼容代码里）。
 
 ### M3-D 真实状态与错误分级
+
+**2026-10-25 已完成并验收，当前工作区尚未提交。** 先运行 rc2 失败探针，再实现分类；error-check 27/27、真实 Electron/原生托盘 status-ui 15/15。401、回环断连、杀引擎均有首页/托盘/主人回复的完整联调证据，全部无付费。详见 `M3_STATUS.md`。QQ 版本检测仍在 M6，账号心跳离线/恢复已有夹具验收，真实账号登录/掉线仍待 M3-E。
 
 任务：
 1. EngineHost 的错误分类：从 `turn/end.reason`、`assistant/attempt` 和 stderr 中识别出 `invalid_key`（401）、`insufficient_balance`（402）、`rate_limited`（429）、`network`、`model_unavailable`、`engine_crashed`。先构造各种失败情况，看清它们实际的事件结构再写，**不要猜**。
@@ -95,9 +105,21 @@
 
 ## M4 伙伴能力
 
+2026-10-25：按用户“不接 QQ 也能用”的澄清，优先实现本机独立入口和 M4-5/6。可选渠道 Core 检查 18/18；本机对话/审批桌面检查已通过，包含实际工作区文件写入、原生托盘、最小化唤起、拒绝/超时/过期拒绝、停止、显示记录恢复、失败保留输入、窗口鉴权。详细结果见 `M4_LOCAL.md`。尚未完成整个 M4，真实模型隐私复验与工具裁剪等仍须后续完成；M3-E 真实 QQ 验收未通过，未省略。
+
+M4-1 核心现已实现：`memory-check` **56/56，连续 3 轮**，跨会话/跨实例、Core IPC、模型不可指定范围、删除与重启后的上下文隔离均通过。本机 UI 回归 34/34；两实例各 2 次真实模型请求的 privacy 复验通过。M4-2/4 记忆页与公开资料编辑也已接通，修正前功能联调 34/34 多轮通过；静态评审后的布局修正仍待最终复验。用户按 Escape 停止原生走查后，所有界面操作已停止，新的明确允许前只做无窗口工作；独立 UX 不算完成。详见 `M4_MEMORY.md`。
+
+M4-3 Core 与 Main 本机幂等收信/ack、preload/renderer 接线已实现：`reminder-check` 43/43，`inbox-check` 41/41，实际 Main 的 Node VM 检查 15/15，真实 Core 的 ACK 丢失/坏数据/满箱恢复 16/16；`reminder-runtime-check` 现用生产收件数据/控制器，23/23，实际等待 60 秒（模型/渠道仍为回环夹具，费用 0；历史直接 ACK 夹具三轮为 20/20）。六项自有工具白名单与最近两实例 privacy 通过；本机收件轮次未改 profile、付费 0。**原生窗口提醒与真实 QQ 仍未验收，不算完整 M4-3 通过。** 用户已明确暂不操作窗口，下一步推进 M4-7～11 的代码/后台部分，界面门禁保留。详见 `M4_REMIND.md`。
+
+M4-7 代码与无窗口验证已完成：本机实际工具从 31 项裁剪为严格 21 项，对外仍为 6 项；目录选择 Main/preload/renderer 接线与 Core 持久化、会话隔离已实现。工作区 29/29、Main/preload/renderer VM 21/21，均连续三轮；再次修改 profile 后，两实例各 2 次真实请求隐私/工具名单复验通过。**原生选择器、实际设置页与缩放仍未验收，不冒充整个 M4 完成。** 接着推进 M4-8～11 与 M5，见 `M4_WORKSPACE.md`。
+
+M4-8 探测已完成，按下表允许的失败分支处理：锁定 Windows SDK 无法 import 官方 computer-use 服务、native/MCP 提供者，均 `ERR_MODULE_NOT_FOUND`，初始化成功不代表能力已激活；实际请求仍为 21 项本机工具。13/13 连续三轮，无桌面动作/截图、无付费调用。**v1 不启用，v1.x 再验证 Windows 提供者与审批闭环**；不把临时禁止窗口操作当成平台不支持的原因。见 `M4_COMPUTER_USE.md`，下一步 M4-9。
+
+M4-9 代码与后台已实现：Core 57/57、Main/preload 17/17、模型表单 27/27、实际数据链路 13/13，各连续三轮；三协议回环探测通过。额外真实兼容接口 external/local 各一次，共 2 次，精确 6/21 工具、无私密上传字段。原生表单/缩放仍未验收，未操作窗口，详情见 `M4_MODELS.md`。下一步 M4-10/11 与 M5；v1 不创建 auto 实例。
+
 | 任务 | 交付物 | 验收 |
 |---|---|---|
-| M4-1 记忆插件 | `fatfish-memory.mjs`、`memory-store.mjs`、范围规则（ARCHITECTURE §7.2） | 跨会话、跨实例都能记起事实；对外实例调用时模型无法指定 `owner_public` 以外的范围（伪造参数测试）；数据只落在 `memory/` |
+| M4-1 记忆插件 | `fatfish-memory.mjs`、`memory-store.mjs`、范围规则（ARCHITECTURE §7.2） | 跨会话、跨实例都能记起事实；模型不能指定范围，主人会话的私有记忆由 Core 路由到 `owner`，`owner_public` 只能由界面写入（伪造参数测试）；数据只落在 `memory/` |
 | M4-2 记忆页 | 记忆页按范围浏览、删除、清空、导出 | 删除后伙伴不再提起；清空后检索为空 |
 | M4-3 提醒插件 | `fatfish-remind.mjs`、`reminder-store.mjs` | 「1 分钟后提醒我喝水」能准时在 QQ 收到；Core 重启后补发；暂停期间不发出去 |
 | M4-4 人格页 | 「人设」改名为「人格」；增加「关于主人（公开资料）」编辑区，即 `owner_public`；切换人格后提示「下一句起生效」 | 切换人格后三个实例都生效 |
@@ -105,21 +127,31 @@
 | M4-6 审批 UI | 弹窗或对话内卡片（DESIGN §11）；超时 120 秒按拒绝处理；托盘提示 | 允许、拒绝、超时三条路径都正确；窗口最小化时能被唤起 |
 | M4-7 本机工具裁剪 | `fatfish-local` 关掉编程专用工具行；本机工作区由主人在设置里选择 | 请求体里的工具名单与设计一致 |
 | M4-8 computer-use 验证 | 测试 rc2 + Windows 下 `computer-use` 能不能用 | 能用就加入本机实例（必须审批）；不能用就记录原因，推到 v1.x |
-| M4-9 模型切换 | 设置页的「模型」分块：服务商、接口地址、Key、模型名、「测试连接」 | 切到一个第三方 OpenAI 兼容接口后，三个实例都能正常对话 |
+| M4-9 模型切换 | 设置页的「模型」分块：服务商、接口地址、Key、模型名、「测试连接」 | 切到兼容接口后 v1 的 external/local 都能正常对话；auto 随 v2 验收（不提前引入）。代码/后台及两次真实请求通过，原生设置表单待允许 |
 | M4-10 PowerShell 5.1 | 在只有 5.1 的干净 Win10 上测试本机实例 | 结论写进 M2_DSH.md 并决定 D-5 |
 | M4-11 人格后缀打磨 | QQ 纯文本、对话连续、不能操作电脑、记忆工具用法 | 抽样 50 轮对话，没有 Markdown、没有「我会忘记」、没有试图调用不存在的工具 |
+
+2026-10-26 M4-11：已获最多 50 次实际出站请求许可，首请求未取得完整回复，实发 1 次即停止、未重试，完整对话 0/50。限额/错误停止及压缩响应修复后的 29 项检查、真实引擎 gzip 回环各三轮通过，不替代真实人格验收。剩余 49 次等待再次明确允许；不重置账本，不把 HTTP 200 当作通过，见 `M4_PERSONA.md`。
 
 ---
 
 ## M5 激活与首次向导
+
+2026-10-26：M5-1 已实现，真实 `wrangler dev --local` + D1 **39/39，连续三轮**，包含两台上限、八路并发、作废、精确解绑、重启持久化、管理 CLI、限流、坏签名配置失败关闭和密钥/发码脚本。未部署、未产生正式密钥，未操作窗口。永久离线许可证不能被服务端撤回，作废/解绑只影响未来签发与名额。M5-1 详情见 `M5_ACTIVATION.md`。
+
+M5-2 双独立验签与所有正常/连接测试启动路径门禁已接，Core 30、Main VM 10、实际客户端/本地 Worker 契约 14 各三轮（仍回归服务端 39）。M5-3 激活表单已接，普通元素/风险检查 13 项三轮；原生布局/键盘未验收。正式公钥/地址有意未配置、失败关闭，无运行时验签开关。此为当时验签基线，M5-4/5 当前进度见以下两段；详情 `M5_LICENSE.md`，不是整个 M5 完成。
+
+2026-10-26：M5-4 代码/无窗口三轮已通过（27/24/9/31/15/12/37 项），基础本机独立于可选 QQ，完成凭据由 Main/真实 Core 产生，恢复进度不自动重复模型请求。原生界面和真实 QQ 门禁仍待，见 `M5_ONBOARDING.md`。M5-5 已完成以下代码/资源检查；不宣称整个 M5 完成。
+
+M5-5：八模块混淆、构建期公开锚注入、ASAR/PE 头哈希更新和签名后复核已接。早期隔离夹具 41 项三轮，现已扩为 43 项；后续真实 builder --dir 产物现为 23 项通过（含关于页尾号），实际 Core/SDK 与资源路径验证通过，费用 0。没有运行原生界面、正式签名、安装程序、部署或发布，见 `M5_PACKAGE.md`。
 
 | 任务 | 交付物 | 验收 |
 |---|---|---|
 | M5-1 激活服务 | `activation-server/`（Workers + D1），`/activate`、`/admin/*`；激活码批量生成脚本；私钥生成与备份说明 | 本地 `wrangler dev` 能走通激活、超出设备数、作废、解绑全部流程 |
 | M5-2 客户端许可证 | 主进程与 Core 双重验签；指纹计算；`license.json` | 未激活时不能进入任何页面，Core 不拉起 DSH；改动 license 中任意一个字节都会验签失败；断网时已激活的用户可以正常使用 |
 | M5-3 激活覆盖层 | DESIGN §11「激活」 | 码无效、设备数已满、网络不通三种情况分别有对应提示 |
-| M5-4 首次向导 | 激活 → 风险告知 → 模型与 Key（含测试连接）→ 登录小号 → 配对主人 → 发一句话试试 | 在干净的 AppData 上一次走通；中途退出后再打开，能从断点继续 |
-| M5-5 代码保护 | bytenode 或混淆许可证相关模块 | 打包产物里搜不到许可证校验逻辑的明文 |
+| M5-4 首次向导 | 激活 → 风险告知 → 模型与 Key（含测试连接）→ 本机试聊；可选 QQ 分支：渠道风险告知 → 登录小号 → 配对主人 → 远程试聊 | 不安装/不登录 QQ 也能走通本机流程；主动接入时走通完整 QQ 分支；中途退出后可续 |
+| M5-5 代码保护 | 已混淆八个验签/入口模块；实际隔离未安装包现为 23 项通过（含关于页尾号模块） | 真实 builder 产物已扫描明文/备份与校验 ASAR/PE；未运行界面、安装或发布，见 M5_PACKAGE.md。正式交付门禁仍保留 |
 
 ---
 

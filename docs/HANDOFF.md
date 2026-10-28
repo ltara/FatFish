@@ -1,75 +1,215 @@
 # 交接说明（给接手开发的人或模型）
 
-> 2026-10-25，最后提交 `6fa9366`（之后只有文档提交）。先读这份，再按顺序读：`CLAUDE.md` → `docs/ARCHITECTURE.md` → `docs/ROADMAP.md` → `docs/M2_DSH.md` → `DESIGN.md`。
+> 2026-10-26。已提交业务基线为 `6fa9366`；M3-A～M3-D 已在当前工作区实现并验收，尚未提交。架构以 `docs/ARCHITECTURE.md` 第 2 版为准，执行顺序与验收以 `docs/ROADMAP.md` 为准，界面遵守 `DESIGN.md`。
 
 ## 1. 一句话现状
 
-DSH 引擎已经接通，Electron → Core → DSH 这条链路在 Windows 上实测可用（e2e 15/15 通过，Core 用 Electron 的 Node 模式运行，和打包后一样）。但是**当前是单实例 + 带工具**，而且没有设置主人的界面，所以真实的 QQ 渠道**不会回复任何人**。**下一步是 ROADMAP 的 M3-A**（三实例框架、对外实例无工具），完成之前不要放行真实渠道。
+**2026-10-28 UI/UX 已按用户指定的 OpenDesign Shadcn 方向收敛，尚未提交。** `DESIGN.md` 重写为第 3 版唯一规范，取消旧视觉补丁叠加：浅灰侧栏、白色阅读面、炭黑主操作、系统无衬线、6/8/12px 圆角；批准的鱼形 Logo 不变。首页主动作移至页头、状态去灰色大框，人格工具栏同高/编辑开放表单，记忆范围分段选择且刷新与页头对齐，模型服务商/名称响应式两列且向导内单列。六页、原 ID、控制器/审批/激活/清理与数据边界不改；Main/preload/控制器/依赖哈希与本轮开始一致，没有 Core 变更。类型/UI 首帧构建通过，384 项呈现/表单契约各三轮；100 项隔离多尺寸渲染、8 项真实 React 无效许可证挂载检查也各三轮，开发隔离实际构建 82 项各三轮通过。只加载合成数据和本地资源，无出站业务调用或真实窗口/后台/数据操作。主 Agent 已看图自检，独立评审因额度限制未执行，不打分、不冒充原生验收。过程证据 `.oil-ui/2026-10-28-shadcn-system/`，说明与手动步骤见 `UI_REDESIGN.md` 最新节；下方旧条目的视觉规格已被第 3 版取代，业务记录保留。未调用模型、接入 QQ、打包/安装/发布或提交/推送，原生与实际业务仍由用户手动验收。
 
-## 2. 已完成的提交
+**2026-10-28 “聊天渠道”已按用户要求改为“平台”，并重排为平台目录，尚未提交。** QQ 是目录中的一项，行内显示用途和真实状态，原生“展开设置/收起设置”承载该平台的启停、风险确认、登录及主人账号管理；默认只显示平台列表，下方“更多平台 / 其他平台暂未开放”不可操作，不虚构具体平台或上线时间。重复 QQ 状态已合并，绑定前置说明只在关闭/离线时就近显示；首次设置配对及未接入登录引导会先展开 QQ 再触发原入口。有效窄视口将身份与状态/操作分行，避免长离线状态把文字挤成竖排。复用现有组件/token/原生 details，没有新素材、卡片或位移动效；内部 channels 路由及全部原控件 ID 保留，不改 Main/preload/Core/IPC、账号协议或数据格式。类型/生成首帧构建通过，平台 43 项、向导实际挂载 10 项及其他呈现/表单/开发隔离门禁共 435 项各连续三轮通过。15 个隔离合成数据浏览器场景（含 960×640、800×560、400×280、长离线状态、Tab/Enter/Space）也各三轮通过，未见横向溢出或说明引用丢失。独立新上下文静态 UX 评审 1 轮，唯一可观察的禁用入口缺少前置说明问题已修正；没有冒充实际交互验收。证据在本机临时目录 `fatfish-platforms-739b3eb41a0744aba7938dbb0acf551a/`，含 `screens/`、`verification-final.log`、`static-ux-review.md`。未启动实际应用/后台、未操作用户窗口/数据或 QQ、未调用模型；原生效果仍由用户手动确认。见 `UI_REDESIGN.md`、`DESIGN.md` §0。
 
-| 提交 | 内容 |
-|---|---|
-| `cac73af` | 产品重新定位为 AI 伙伴；ARCHITECTURE 第 1 版、CLAUDE、DESIGN |
-| `be412e3` | M2 DSH 技术验证：`spikes/m2-dsh/`；`fetch-vendor` 接入 DSH（固定 SHA256） |
-| `d2f2b96` | M3-1：`app/core`（EngineHost、Router、QQ 渠道、e2e） |
-| `6fa9366` | M3-2：Electron 以 fork + IPC 启动 Core；打包包含 `core/` 和 `vendor/dsh` |
-| （本次） | 文档：ARCHITECTURE 第 2 版（三实例）、ROADMAP、HANDOFF、CLAUDE、DESIGN |
+**2026-10-28 聊天渠道已从设置独立到侧栏，尚未提交。** 入口位于记忆与设置之间，采用平台中性的“聊天渠道”名称，页面目前仅有 QQ 分组；原接入开关、风险确认、状态、登录和主人绑定/解除完整迁移，设置不再重复或读取绑定。首次设置配对、未启用时的登录引导及开发热刷新页面恢复已同步。复用现有组件、宽度、分组和内联线性导航图标，无新 token/卡片/动效，不改 Main/preload/Core/IPC、安全身份或数据。类型与生成首帧构建通过；新增渠道 30 项（含真实导航/接入函数普通元素检查），连同既有呈现/表单/向导/激活/清理/人格/开发隔离门禁共 421 项，各连续三轮通过。12 个隔离合成数据静态场景覆盖前后、960×640/800×560/400×280、风险/绑定/解绑/错误/键盘焦点，计算样式未见横向溢出、导航文字截断或说明引用丢失。主 Agent 已局部看图自检，未独立评审；证据在本机临时目录 `fatfish-chat-channels-db5e774cd8ee4f60972393ee79b274cb/screens/`，最终检查日志为同目录上级 `verification-final.log`。未启动实际应用/后台、未操作用户窗口/数据、未连接 QQ 或调用模型；原生效果仍由用户手动确认。见 `UI_REDESIGN.md`、`DESIGN.md` §0。
 
-## 3. 代码地图（只列需要知道的）
+**2026-10-28 设置页启动/数据区域已按层级重排，尚未提交。** 开机启动独立成组、开关紧邻标题；数据管理改为“打开数据文件夹 / 导出设置”两个并排完整按钮，取消重复标签。清空数据使用独立副标题子区与就近危险按钮，不加卡片/红底/密集线；风险与隐私移至关于之后独立收尾。开机启动、普通数据操作、清理反馈分别显示在各自区域；只改呈现和消息节点绑定，不改原调用/独立勾选/清理范围或 Main/Core/IPC。类型与生成首帧构建通过；新增实际事件/普通元素检查 21 项，合计 311 项各连续三轮通过。13 个隔离合成数据场景覆盖前后、960×640/800×560/400×280、确认/取消/错误反馈、键盘焦点和风险展开；计算样式验证 16/14/13 字号层级、开关 16px 邻近间距、按钮左对齐、反馈与确认所属区域和无横向溢出。主 Agent 已看静态图，无新增动效；未独立评审或原生验收。证据与局部预览位于本机临时目录 `fatfish-settings-hierarchy-aee94f6559fe43ca977e39c5d49c794a/screens/`。未启动实际应用/后台、未操作用户窗口/数据、未连接 QQ 或调用模型；真实效果仍由用户手动确认。
 
-| 文件 | 状态 | 说明 |
+**2026-10-28 设置页分隔线已收敛，尚未提交。** 同组功能行与动态主人行取消分隔线，设置块不再画底线，只在相邻大组前保留一条；“风险与隐私”不加上边框或额外顶间距，关于页尾无多余线。仅改 `renderer/styles.css`，按钮/输入轮廓、内部模型容量折叠和其他页面列表边界不变，没有修改组件/控制器/IPC。类型与 UI 构建通过，普通元素检查新增 7 项、现为 43 项，连同既有门禁共 290 项各连续三轮通过。11 张隔离静态截图/计算样式检查覆盖前后、960×640/800×560/400×280、风险展开、清理确认、错误反馈、解绑确认与高级模型字段，未见横向溢出或重复边框；证据在本机临时目录 `fatfish-settings-lines-c48e3ba6167c4de882ea86f0366d3d02/screens/`。未启动实际应用/后台、未操作用户窗口/数据或 QQ、模型；原生效果由用户手动确认。
+
+**2026-10-28 操作按钮辨识度已统一，尚未提交。** 20 处常规/危险操作从裸文字改为真实 shadcn `Button variant="outline"` 与现有描边样式，主人与记忆列表动态按钮同步；橙色主操作、取消/返回等弱操作、侧栏/窗控/状态入口和输入焦点不变。只改呈现声明与动态按钮类名，不改事件、确认或 Main/Core/IPC。类型与 UI 构建通过；新增按钮 44 项，连同原有 239 项普通元素/契约检查共 283 项，各连续三轮通过。隔离合成数据 16 张静态截图覆盖前后、960×640/800×560/400×280 有效窄视口、悬停/键盘焦点/禁用、设置/列表/向导/配对/激活/对话，无横向溢出或说明关联断开；证据在本机临时目录 `fatfish-ui-buttons-c1df7c165647463fb50e2d2885c8c693/screens/`。未操作实际肥鱼窗口/用户数据，未启动应用后台、连接 QQ 或调用模型；原生效果仍由用户手动确认。
+
+**2026-10-28 全站说明文案已精简，尚未提交。** 设置删除重复页头、无修改状态和常驻重读说明；丢弃草稿的提醒仅在脏输入时显示，密钥仅保留短状态与尾号。对话、人格、记忆、激活、登录及首次设置同步缩短，设置末尾重复风险要点改为原生折叠；费用、隐私、逐次审批、删除范围和防重复提交提示仍保留，不改 Main/Core/IPC 或实际数据。类型与 UI 构建通过，文案/表单/呈现/导航/向导/激活/清理/人格合计 239 项无窗口检查各连续三轮通过（新增 `scripts/ui-copy-check.js` 25 项、模型表单扩为 37 项）。隔离合成数据的 10 张静态截图覆盖前后对照、960×640、800×560 和 480×320 有效窄视口，无横向溢出或断开的说明关联；证据在本机临时目录 `fatfish-ui-copy-e23ab6583831477199a4d189027bc677/screens/`。没有启动或操作肥鱼实际窗口/后台、没有真实数据、QQ 或模型调用；原生效果仍由用户手动验收。
+
+**2026-10-28 用户批准的肥鱼 Logo 已原样导出并接入五处图标入口，尚未提交。** 使用奶油鱼身、暖橙鱼鳍、深色圆角底的中间批准稿，不再重绘；侧栏与生成首帧、窗口/任务栏、带状态角标的托盘、Windows 构建图标和开发快捷方式均已接线。现有开发快捷方式只改图标，启动参数与数据目录不变。资源/Main VM 61、UI 契约 41、普通元素 36、Main 回归 17、开发隔离 80 项及静态布局 21 项各连续三轮通过，资源导出三轮哈希一致；类型与 UI 构建通过。没有启动实际窗口、后台或模型，没有打包/安装/发布；旧 EXE 的嵌入资源尚未更换，原生效果由用户保存输入后完全退出并重开验证。批准稿、导出规则与剩余门禁见 `BRAND_ASSETS.md`。
+
+**2026-10-27 输入聚焦彩色描边已按用户最新要求取消，尚未提交。** 对话、公开资料、人格编辑等输入控件保留静态细灰边框，以轻微底色变化提示聚焦，不叠加橙色边框/outline/ring；按钮等键盘焦点不变。仅样式与契约检查，类型检查及 41/36/21 项各三轮通过，两种视口的三个指定区域已隔离自检；未操作实际窗口/数据或模型。最新规范见 `DESIGN.md` §0、`UI_REDESIGN.md`，取代此前输入区 2px 外框约定。
+
+**2026-10-27 开发热更新持续等待已定位并修复，尚未提交。** 原判断把首帧隐藏的人格删除确认文案误当成活动解绑确认；已将查询限定在主人列表，真实请求/审批/草稿保护不变。修复前新增回归已失败复现，80 项隔离热更新检查与 13 项真实首帧 DOM 检查各三轮通过。当前窗口的旧函数不会自行更新，需用户保存输入后手动完全退出并重开开发版一次；未代为操作窗口/重启，也未读实际数据或调用模型。见 `DEVELOPMENT_HOT_RELOAD.md`。
+
+**2026-10-27 聊天输入区按用户反馈局部优化，尚未提交。** 仍用 shadcn Textarea / Button，去掉内部焦点框，只留浅灰编辑区的一层外框；收紧间距，发送/停止保持相同尺寸且保留独立键盘焦点。类型检查、首帧构建通过，39/36/25 项契约、普通元素、隔离浏览器检查各三轮；三种有效视口五种状态已做隔离静态自检，未操作实际窗口/数据或后台/模型。见 `UI_REDESIGN.md`，原生效果仍由用户手动确认。
+
+**2026-10-27 开发界面热更新已接入，尚未提交。** 双击既有开发快捷方式或 `npm run dev`，首次启动编译并监听界面源码；CSS 热替换，组件/控制器在无在途请求、审批与未保存输入时安全整页刷新。主进程、preload、Core 与依赖只提示手动重开，不自动重启后台。仍保持隔离代码副本、开发签发器、双重验签、file:// 与既有沙箱；只在复制的 preload 注入计数桥，开发脚本不进正式包。74 项隔离 Node/VM/真实编译检查通过，兼容快捷方式 vendor Node；既有呈现层与表单门禁也已回归。未启动或操作肥鱼、未访问实际数据/模型，原生生命周期与实际效果仍由用户手动验收；**需用户手动重开开发版一次才启用监听**，见 `DEVELOPMENT_HOT_RELOAD.md`。
+
+**2026-10-27 双栏伙伴新版与 shadcn/ui 已接入，当前未提交。** 用户澄清参考图只用于样式，不复制邮箱结构；随后明确要求使用 shadcn/ui。呈现层改为 React + 五种真实 shadcn 组件，仍是首页/对话/人格/记忆/设置双栏；Core、IPC、单次审批和激活协议不改。界面源码改在 `renderer-src/App.tsx`，执行 `npm run build:ui` 生成带激活锁的本地首帧与资源；`npm run check:ui` / `npm run framework-check` 做静态门禁。只做隔离无窗口验证，不启动肥鱼、不操作实际数据或模型；原生与真实业务仍由用户手动验收。最新结果和边界见 `UI_REDESIGN.md`，旧 UI_POLISH 只是此前未达到用户预期的精修基线。
+
+**2026-10-26 UI 精修已完成代码与隔离验证。** 保留静港仪表，统一页头/侧栏留白、主按钮与状态文字对比度、键盘焦点，去掉首页重复入口和对话卡片嵌套，改善空库与小窗口排版。161 项无窗口检查各三轮通过；仅按新许可做隔离静态截图，不启动肥鱼、不读实际数据、不连 QQ 或模型。一轮独立视觉评审的问题已处理，原生窗口与真实业务仍由用户手动验收；见 `UI_POLISH.md`。未提交/推送，不改变其他里程碑门禁。
+
+**2026-10-26 开发双击入口补充**：用户不希望本地开发使用时还手动运行命令。已补 `scripts/create-development-shortcut.ps1` 和 `scripts/launch-development.ps1`，并创建本机仓库根目录 `肥鱼（开发版）.lnk`，沿用上轮明确指定的原开发数据目录。不改生产入口或双验签，不复制 Key；快捷方式含本机绝对路径、被忽略。只创建文件，未点击/启动/自动验证，仍由用户手动验收。
+
+**2026-10-26 最新人工反馈与开发码入口**：用户确认「肥鱼 · M5 独立验收」手动验收通过（关于页、设置完成/QQ 可选、缩放可达性），并要求此后由他手动验证，不再自动操控窗口。其后仅按明确要求关闭全部肥鱼开发/验收进程并重开普通窗口，沿用原数据，未删配置或 Key。普通源码正式信任锚仍未配置。现按用户新要求新增固定开发码入口 `npm run dev`：只在隔离代码副本注入开发公钥，本机开发签发器保存服务端密钥，不加生产绕过开关；沿用尾号 `9A7C` 的固定码。**本轮仅写代码，未启动/测试该新入口，不能当成已可用验收通过。** 手动步骤与数据目录说明见 `DEVELOPMENT_ACTIVATION.md`。
+
+**2026-10-26 关于页末四位已补齐，最新真实未安装包 23/23。** 只存非鉴权尾号/许可证字节哈希，不保存完整码，不改签名协议或双验签；实际 Main/preload/about 链路 32 项各三轮，默认清理保留尾号、独立清激活才删除。新包源快照 63 项与当前应用源码匹配，无窗口/安装/发布/额外付费。旧证无尾号时如实不显示，见 `M5_ACTIVATION_DISPLAY.md`。完整剩余门禁见 `M5_COMPLETION_AUDIT.md`，整个目标仍未完成。
+
+
+**2026-10-26 M5-5 已通过真实本地未安装包的 22 项验收。** 在用户明确许可下，以隔离源码/清洁 vendor ZIP、临时测试公钥运行锁定 builder --dir；包内 ASAR/PE 保护、缺失/篡改拒绝、独立有效验签与真实资源路径 Core/引擎/回环对话通过，未运行界面、安装、发布或用正式密钥，见 M5_PACKAGE.md。实际包保存在独占临时目录。保护夹具现为 43 项（补默认 dist 路径和 Windows 多级 ASAR 依赖）；初次真实失败已修复并保留证据。
+
+**新的模型许可**：用户允许最多 50 次真实模型请求用于人格抽样，仅新临时上下文、不读历史、不连 QQ、限制输出、遇错停止、不自动付费重试。此上限按所有实际出站请求累计，工具后续也占额度；本轮截至真实包验收付费仍为 0；随后人格抽样已实发 1/50 次，首请求 HTTP 200 但未完整回复，已停止且未重试，完成对话 0/50。测试代理压缩响应处理已离线修复，29 项与真实引擎 gzip 回环各三轮；首请求根因不能据此断定。剩余 49 次须再次明确允许后恢复，禁止重置账本。M4-11 未通过，见 `M4_PERSONA.md`。
+
+**2026-10-26 人格就地交互与删除复活问题已收口。** 33 项动作/16 项真实存储/13 项实际 Main 数据链路各三轮，renderer 系统弹窗调用清零；旧库示例只迁移一次，不再把用户删除补回来。原生界面仍未运行，见 M5_PERSONA.md。**用户现已明确允许仅临时目录的未安装本地测试包与后台验收，不运行界面、不安装/发布、不用正式密钥。** 真实包后续已通过，见上段 M5_PACKAGE.md；仍不能拿 ASAR/最小 PE 夹具冒充实际 builder 产物。
+
+**2026-10-26 数据清理契约已修复并完成无窗口三轮。** 旧入口确实存在普通确认删 Key、聊天残留、未停后台问题；现在默认保留 Key 及关联模型路由/许可证，两个独立选项才删除；安全停机、拒绝在途写、清理已知应用数据但保留工作区文件，成功退出、不自动重开。文件系统 22、实际 Main/preload 15、普通元素 17、真实 Core/SDK 14 项各三轮；当前首次向导 37 和保护资源 41 也各重跑三轮。原生 UI 仍待允许，未操作实际数据或付费，见 `M5_DATA_CLEAR.md`。
+
+**2026-10-26 M5-4 与 M5-5 代码/隔离无窗口验证通过，正式交付门禁保留。** M5-4 本机优先的可续首次设置代码/无窗口三轮通过：进度 27、控制器 24、实际挂载 9、模型表单 31、激活/告知 15、Main 门禁 12、实际 Core 数据链路 37。QQ 分支单独选择；真实成功凭据才完成，进度恢复不自动重测/重发，未同意基础告知不启动服务。M5-5 构建期公开锚注入、八模块混淆和 ASAR/PE 检查已接，隔离资源夹具 41 项三轮；没有正式密钥/部署/打包。原生 UI、真实 QQ、实际安装包和干净系统门禁仍待，见 `docs/M5_ONBOARDING.md`、`docs/M5_PROTECTION.md`。不是整个 M5 完成；继续保持用户的窗口禁令。
+
+**2026-10-26 M5-2 双独立验签代码/后台通过，M5-3 激活表单已接、原生验收待允许。** Core 30、Main VM 10、实际客户端/本地 Worker 契约 14（并回归服务端 39），均连续三轮；最终表单/风险元素检查 13 项三轮。正常实例和独立连接测试都受门禁，伪造环境/父进程 valid 不放行。测试只在隔离副本替换公开信任锚，生产没有验签开关，正式公钥/地址仍为 null、失败关闭；没有生成正式私钥/部署/操作窗口或改实际许可证。M5-4/5 后续代码进度见首段和 `M5_ONBOARDING.md`、`M5_PROTECTION.md`；本段是当时验签基线，见 `M5_LICENSE.md`。
+
+**2026-10-26 M5-1 已完成本地验收。** 新建独立 activation-server，真实 Wrangler/D1 39 项连续三轮，支持发码哈希导入、两台上限/并发原子分配、查询/解绑/作废、服务端 Ed25519 签名、限流和密钥备份说明。没有部署或正式私钥；M5-2/3 的后续实现和边界见上段；正式服务配置、实际安装包与原生交互还未交付。永久离线意味着作废不能撤销已签发许可证。详见 `M5_ACTIVATION.md`。
+
+**2026-10-26 M4-9 代码与后台验收通过，原生表单保留门禁。** 完整模型设置、版本化密钥、旧表单并发保护与独立连接测试已接通；Core 57 项、完整数据链路 13 项、表单 27 项、Main/preload 17 项均连续三轮。真实 rc2 三种兼容协议回环验证通过；另用原已配置服务商的 Chat Completions 兼容接口实发 external/local 各一次，均正常回复、精确工具白名单、无私密上传字段，合计 2 次付费。没有窗口或真实 QQ 操作，没有用户历史跨服务商发送。原生设置页/缩放待允许，其他服务商未逐家真实认证，不能说整体 M4 完成。详见 `M4_MODELS.md`。M4-10/11 与 M5 后续范围保留。
+
+**M4-8 能力探测完成，当前交付 SDK 缺少可加载的界面操作服务/提供者。** 服务、native 与 MCP 三种组合均 import 失败，但 SDK 初始化与普通文本仍可成功；实际工具目录没有界面操作工具。13 项探测连续三轮，截图/桌面动作/付费调用均 0，生产 profile 未改。按路线图允许的失败分支，v1 不启用，v1.x 再验证；不是宣称 Windows 永远不能用。下一步 M4-9 模型切换，见 `M4_COMPUTER_USE.md`。
+
+**M4-7 本机工具裁剪/工作区已实现并通过无窗口验证：29 项真实 Core/目录操作、21 项 Main/preload/renderer VM，均连续三轮。** Windows local 精确 21 项工具，external 仍 6 项；两实例最新 privacy 各 2 次真实请求通过（本轮总 4 次付费）。工作区从设置选择，更改后只重置本机模型会话、不移动文件，审批中不能更改。原生选择器、设置页截图与缩放没有运行；用户仍禁止窗口操作。下一步 M4-8～11 与 M5，详见 `M4_WORKSPACE.md`。
+
+**M4-3 Core 与本机幂等收件数据链路已接通：43 项调度检查、41 项收件数据/控制器、15 项实际 Main IPC（Node VM）、16 项真实 Core 恢复/反压验证通过。** 运行时已从父进程 ACK 夹具换为生产收件数据/控制器，23 项完整链路实际等待 60 秒验证；原 20 项三轮结果仍保留。当前 external 白名单是三项记忆 + 三项提醒，共 6 项 Core 工具；最近 profile 隐私实测各 2 次真实请求通过，本机收件轮次未改 profile、未重复付费。实际窗口提醒与真实 QQ 收信尚未验收，不算整个 M4-3 完成。渠道 stop/start 的旧重连 timer 缺陷已最小修复并记录 `.buglog`。详见 `M4_REMIND.md`。
+
+**M4-1 记忆核心已实现验收；M4-2/4 记忆页与公开资料编辑已接通，静态修正后的最终界面复验未完成。** M4-1 当时对外工具为三项记忆，M4-3 现已扩展为上面的 6 项；下方 M3-A 空工具集同样是历史记录。`memory-check` 56/56 连续 3 轮；删除后更换模型上下文代号，旧展示记录保留但不自动恢复旧模型上下文。记忆 UI 修正前 34/34 多轮通过；独立 UX 中用户以 physical Escape 停止了界面操作，之后明确选择「暂不操作窗口，继续代码和后台验证」。未获新的明确允许前不能恢复 Computer Use、Electron smoke 或 UI 自动操作。目标不暂停、不缩小。实现、边界与下一步见 `M4_MEMORY.md`。
+
+**M3-A 已完成：对外与本机是两个独立的 DSH 进程、DSH_HOME 和工作区，M3-A 当时对外实例的真实模型请求 `tools[] = []`；M4 现已增加上述六项 Core 记忆/提醒工具。** Electron → Core → DSH 的完整验收通过（Core 用 Electron-as-Node）。自主实例只预留架构，不在 v1 实现。
+
+**M3-B～M3-D 也已完成；当前已进入 M4 的独立本机分支，M3-E 真机 QQ 验收仍未通过。** 身份只认 `config.owners`，旧 owner_qq 已迁移并删除；设置页有主人绑定、倒计时、换码、绑定列表和就地二次确认解除。默认空绑定表不回复任何人。配对码不入模型，错误/过期/锁定/冒充都被拦住；解绑后不再发送在途回复，也不再执行已排队的远程请求。本轮未修改原有肥鱼 AppData、未提交或打包。用户指出 QQ 不能成为启动门槛后，已停止此前无绑定、无对话的扫码测试进程及其自有后台；QQ 改为可选。本机对话与审批已通过本地验收，真实 QQ 对话仍未验收。
+
+## 2. 已完成
+
+| 阶段 | 提交 / 状态 | 内容 |
 |---|---|---|
-| `app/core/server.mjs` | ✅ | 入口；**IPC 协议写在文件头注释里**，新增消息时同步修改 |
-| `app/core/engine-host.mjs` | ✅ 单实例 | DSH 进程管理：每次启动覆盖安装 profile；去掉继承来的 `DSH_*` 等变量；崩溃后退避重启；key、人格、模型变化时重启；首次使用会话时 resume；串行执行各轮对话；审批回环服务（M3-A 要抽到 gateway） |
-| `app/core/router.mjs` | ✅ 单实例 | 只放行 `config.owner_qq`（**没有界面能设置它**）；暂停；当日统计存 `runtime/stats.json`；出错时用伙伴口吻回复 |
-| `app/core/channels/qq.mjs` | ✅ | OneBot WS，只连 loopback；发送用消息段，不用 CQ 码；长回复分段 |
-| `app/core/dsh-client.mjs` | ✅ | JSON-RPC 客户端；`prompt()` 返回 `{ texts, events, endReason }`。**目前只传 `--profile`，M3-A 需要支持 `--patch`** |
-| `app/core/profile/` | ✅ 单实例 | `cordis.patch.yml`（隐私、隔离、人格、时区、审批插件）+ `fatfish-approval.mjs`。M3-A 要拆成 `profiles/` 下的多个目录 |
-| `app/core/dev/e2e.mjs` | ✅ | 假 OneBot 后台 + 真 DSH + 真 Key 的 15 项验收；`E2E_EXEC_PATH=<electron.exe>` 模拟打包后的运行方式 |
-| `app/electron-ui/service-manager.js` | ✅ | fork Core，`getCore()` / `sendCore()`；**仍然会启动 8787**（M3-C 删除）；没有审批监听者时一律拒绝 |
-| `app/electron-ui/main.js` | 部分 | `get-status` 已加入 `engine_state`、`channel_state`、`core_stats`、`last_turn_error`，**但 renderer 还没使用**（M3-D）；暂停和保存 Key 会通知 Core |
-| `app/bridge/`、`app/shell/` | ❌ 待删除 | 已不再启动（bridge）或属于冗余组件（shell），M3-C 删除 |
-| `spikes/m2-dsh/` | 参考 | `run.mjs` 中有**录制代理**，M3-A 的工具白名单验收要复用它；`pending.mjs` 用来检查哪些插件行卡在 pending |
+| M2 | `be412e3` | 锁定 rc2，验证人格、会话续聊、审批和隐私，固定 vendor SHA256 |
+| M3-1 | `d2f2b96` | Core、Router、QQ 渠道、原 15 项 e2e |
+| M3-2 | `6fa9366` | Electron fork + IPC，打包包含 Core 和引擎 |
+| M3-A | 当前工作区，未提交 | profile 拆分、实例管理、插件网关、隔离与验收 |
+| M3-B | 当前工作区，未提交 | owners、配对码、身份 IPC、设置与配对覆盖层、重复联调 |
+| M3-C | 当前工作区，未提交 | 删除旧组件、空开关；暂停持久化 + IPC 握手；人格即时重载 |
+| M3-D | 当前工作区，未提交 | 实测错误分类、真实统计、实时首页与原生托盘一致 |
+| M4 独立本机分支 | 当前工作区，未提交；整体 M4 未完成 | QQ 可选、本机对话与审批，见 M4_LOCAL.md |
+| M4-1 记忆核心 | 当前工作区，未提交 | 56 项检查连续 3 轮、严格工具白名单与新隐私复验，见 M4_MEMORY.md |
+| M4-2/4 记忆页/公开资料 | 已实现；最终复验待允许 | 34 项多轮联调；静态问题已修正但没有冒充修正后通过；独立 UX 部分完成 |
+| M4-3 提醒/本机收件 | 后台与前台接线已实现；原生 UI/真 QQ 未验收 | 43 项调度、41 项收件、15 项 Main VM、16 项恢复/反压；23 项生产收件整合实际 60 秒 |
+| M4-7 工具/工作区 | 已实现；原生选择器/界面未验收 | local 21/external 6 项精确白名单、29 项工作区和 21 项 VM 各三轮、最新两实例 privacy |
+| M4-8 界面操作 | 探测完成；v1 不启用，留 v1.x | 锁定 SDK 服务/native/MCP 模块 import 失败，13 项无桌面动作探测各三轮 |
+| M4-9 模型切换 | 代码/后台与两次真实兼容请求通过；原生表单待允许 | Core 57、数据链路 13、表单 27、Main 17 各三轮；v1 两实例，见 M4_MODELS.md |
+| M5-1 激活服务 | 本地代码与验收完成；未部署 | 真实 Wrangler/D1 39 项各三轮；双设备、并发、解绑/作废、限流与密钥脚本，见 M5_ACTIVATION.md |
+| M5-5 代码保护 | 八模块/公开锚注入/ASAR 与 PE 检查已接，资源夹具 41 项三轮；未实际打包 | 不生成正式密钥或部署，不把夹具当安装包，见 M5_PROTECTION.md |
+| M5-4 可续向导 | 代码/无窗口三轮通过；未原生/真实 QQ 验收 | 27/24/9/31/15/12/37 项，见 M5_ONBOARDING.md |
+| M5-2/3 许可证/激活 | 门禁代码/后台通过，表单代码已接；未原生验收 | Core 30、Main 10、客户端/Worker 14 各三轮；表单/风险 13 项三轮，正式锚未配置，见 M5_LICENSE.md |
 
-## 4. 这台开发机的环境坑（Windows + Git Bash）
+## 3. 代码地图
 
-- **DSH 运行时**：`./scripts/fetch-vendor.sh` 会下载并校验。PyPI 的 CDN 走 HTTP/2 时会断，脚本里已经加了 `--http1.1 --retry`。`vendor/dsh/` 不进 git。
-- **Electron 安装**：npm 源是 npmmirror，但 Electron 的 postinstall 会去 GitHub 下载二进制，导致 TLS 失败。要这样装：`ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/" npm install`。打包时还要加 `ELECTRON_BUILDER_BINARIES_MIRROR`（见 `docs/ELECTRON.md`）。
-- **在 Git Bash 里调用 Windows PowerShell 5.1**：它会继承 PowerShell 7 的 `PSModulePath`，导致 `Get-FileHash` 找不到。要用 `env -u PSModulePath powershell ...`。
-- **路径**：Git Bash 里 `/tmp` 实际指向 `%LOCALAPPDATA%\Temp`；把路径传给 Windows 程序时要用 `cygpath -w`（反斜杠）或 `cygpath -m`（正斜杠）。在 heredoc 或 `printf` 里写反斜杠路径会被当作转义字符（例如 `\v`）。
-- **测试 Key**：环境变量 `DEEPSEEK_API_KEY` 已经设置。**绝不能打印或写入文件**。e2e 会检查日志里没有 Key。
+| 文件 | 当前职责 |
+|---|---|
+| `app/core/server.mjs` | 入口，文件头是 IPC 权威定义；新增 `chat_send`（仅父进程 IPC）、`chat_result`、`chat_event`、`turn_end`；引擎状态携带实例名 |
+| `app/core/instance-manager.mjs` | external 常驻预热；local 首次本机请求时启动，空闲 10 分钟停止；每实例独立队列与数据目录；auto 未实现 |
+| `app/core/engine-host.mjs` | 单进程生命周期、启动去重、崩溃退避重启、配置变化重启、session/resume、整份覆盖受管 profile；不再内置审批 HTTP 服务 |
+| `app/core/gateway.mjs` | 随机回环端口、每实例独立 Bearer token；token 决定来源；只接受 local 当前活跃会话的审批请求；非法参数、超时、断连均拒绝 |
+| `app/core/router.mjs` | 先处理配对；其余消息按 owners 判断，串行出队前和回复前重查绑定；只进入 external，添加渠道标记 |
+| `app/core/identity.mjs` | owners 与旧字段迁移、内存配对码、10 分钟 TTL、每账号窗口内最多 5 次、原子保存、解除绑定；换码不重置尝试计数 |
+| `app/core/profiles/` | 公共隐私/人格/时区补丁，通过绝对路径 `--patch` 加载；external 禁用宿主工具；local 沿用 workspace-write + ask |
+| `app/core/paths.mjs` | 实例目录；旧 `dsh/sessions` 复制到 external，保留原件，不覆盖新数据；`legacy-session.json` 保留旧主人会话 ID 的映射 |
+| `app/core/dev/contracts.mjs` | 无付费契约检查：网关身份与失败关闭、按需启停、隔离、迁移、真实 rc2 请求体和 pending |
+| `app/core/dev/e2e.mjs` | 假消息后台 + 真模型 + 真引擎；原用例的越界审批改由本机 IPC 触发，远程不再允许执行 |
+| `app/core/dev/model-proxy.mjs` | 录制代理；请求体只留内存，不落盘；也提供无付费 SSE fixture |
+| `app/core/dev/identity-check.mjs` | 43 项身份、消息路由、主进程请求关联与真实 Core/引擎本地夹具验收；无付费调用 |
+| `app/electron-ui/main.js`、`preload.js`、`renderer/` | 主窗口顶层 frame 的主人管理入口、接收小号身份展示、配对状态与焦点管理、绑定表读回与解除 |
+| `app/electron-ui/scripts/*pairing-ui-test.js` | 真实 main/preload/renderer/Core 联调；只模拟首次登录/模型状态与消息后台；截图取证，退出后父进程清理独占测试目录 |
+| `app/electron-ui/service-manager.js` | 缓存各实例状态；旧 `engine` 字段只代表 external，local 启停不污染首页；没有审批 UI 时仍自动拒绝 |
+| `app/electron-ui/reminder-inbox.js`、`reminder-controller.js` | 单事务保存展示消息与去重高水位，持久化后 ACK；目录/容量/磁盘握手与恢复，不将提醒转为本机模型输入 |
+| `app/core/workspace-config.cjs` | Core 独占的目录验证、原子保存、工作区上下文代号；Core IPC `workspace_ui` 不是模型工具 |
+| `app/core/dev/cleanup-check.mjs`、`scripts/verify-m3-cleanup.mjs` | 旧路径静态闸门、暂停启动/IPC/重启与续聊人格验证 |
+| `app/electron-ui/scripts/*lifecycle-ui-test.js` | 两个真实 Electron 进程，主进程/preload/renderer/Core 与本地模型夹具联调 |
 
-## 5. 常用验证命令
+## 4. 验收（2026-10-25，Windows）
+
+### 本轮 M4 本机独立分支
+
+- `optional-channel-check` **18/18**；本机 UI 核心路径连续三轮通过（32/32 原生托盘、31/31、31/31），补多行与 200% 可达性后的最终版 **34/34**。实际运行时和文件工具；模型/消息只走本地夹具，费用 0。
+- 独立 `/root/local_ux_review` 通过原生窗口真实走通本机聊天；修正其发现的首页统计范围问题。详见 `docs/M4_LOCAL.md`（含工具/保持窗口会话限制）。
+- 旧扫码窗口已核对空绑定、互动 0 后停止；仅清理其精确 PID 子树，没有按名称终止其他 QQ。
+- 本机工作区审批已通过运行时 pre-execute ask 接通，不再以工作区默认免审批作为当前产品口径；M2 的默认行为结论仍保留。
+
+### M3-D 上轮
+
+- `error-check` **27/27**，`status-ui` **15/15**；实际原生 Tray 的 tooltip/菜单/图标 bitmap 均被观察，主窗口通过真实 IPC 自动更新。全部模型、消息流量只到回环夹具，无付费调用。详见 `docs/M3_STATUS.md`。
+- 再回归 `contracts` **38/38**、`cleanup-check` **12/12**、`lifecycle-ui` **11/11**、`check` 和 Electron smoke。
+- 网络用例关闭回环 fixture 连接，没有关闭用户网络；杀进程仅针对测试引擎 PID。用户已同意后续 M3-E 扫码配合与少量模型调用，但真实 QQ 本节尚未执行。
+
+### M3-C 本轮
+
+- `cleanup-check` **12/12**：新安装默认人格/owners、仅双端口、Core+后台判定、启动暂停、删除标记不绕过缓存、IPC 恢复、人格 reload 后原会话下一句生效、历史保留、工具仍为空、重启仍暂停。
+- `lifecycle-ui` **11/11**，跨两个真实 Electron 进程：未模拟 get-status，覆盖实际 Key 保存、人格应用 IPC、首页暂停按钮、进程重启后暂停和人格仍有效。仅登录接口与模型/消息服务用夹具。
+- 回归：`contracts` **38/38**、`identity-check` **43/43**、`pairing-ui` **23/23**、`check`、Electron `smoke: window_ready`，全部通过。配对回归截图在同级 `fatfish-m3c-regression/`。
+- `start/stop/doctor.ps1` 保留 UTF-8 BOM，Windows PowerShell 5.1 AST 检查通过；未执行会启动/停止真实后台的诊断脚本。`git diff --check` 和旧路径静态扫描通过。
+- 新人格不一定重写模型请求顶层 system：rc2 在续聊 messages 中发送上下文变更；夹具已检查完整上下文，不清会话。此前错误断言不是实际引擎缺陷，不写 buglog。
+- 本轮未连接真实 QQ、未调用付费模型、未改 profile、未提交或打包。
+
+### M3-B 上轮
+
+- `app/core`：`npm run identity-check` **43/43，连续 3 次**，Core 通过 Electron-as-Node 运行；`npm run contracts` 38/38 回归通过。
+- `app/electron-ui`：`npm run pairing-ui -- --evidence <绝对输出目录>` **23/23，连续 3 次**。覆盖正确/错误/失效/换码/锁定反馈、选择复制连续六位数字、接收小号账号、Esc/焦点限制、成功按钮、重开读回、取消解除、保存失败恢复、主窗口鉴权和 Core 断开。
+- 截图包括 960×640、800×560、200% 放大、绑定前后与关键异常状态。三轮功能报告在本机 `.codex/visualizations/2026/10/24/01a16f76-c9b5-70c2-a81d-9b843307a01e/fatfish-m3b-verified-1|2|3/`；最终静态终态截图在同级 `fatfish-m3b-final-evidence/`（额外等待隐藏窗口首帧合成和动画终态，避免截到半透明过渡）。
+- 界面失效状态的渲染用事件夹具驱动；真正的 10 分钟过期边界用 Identity 注入时钟验收，并非实际等待 10 分钟。
+- 独立 UX 工具不可见原生测试窗口，仅完成静态走查，未完成独立交互走查。静态报告在同级 `fatfish-m3b-review/ux/ux-review.md`；接收账号不明确、成功后“取消”有歧义两点已修正并重跑测试。
+- 本轮只使用临时数据、本机消息后台与模型 SSE 夹具，没有真实 QQ、真实密钥或付费模型调用。依赖和 profile 未改动，不重跑付费 e2e/privacy。
+
+### M3-A 上轮记录（不是本轮重跑的真实模型结果）
+
+- `app/core`：`npm run check` 通过；`npm run contracts` **38/38**，无真实模型调用。
+- `E2E_EXEC_PATH=<electron.exe> npm run e2e`：**28/28**；包括对外工具空白名单、系统文件/回环请求无工具调用、本机拒绝审批不落盘、独立进程、崩溃恢复。
+- `app/electron-ui`：`npm run smoke` 通过，实际出现 `smoke: window_ready`。
+- `spikes/m2-dsh/run.mjs privacy fatfish-external|fatfish-local`：两实例均通过；各 2 次真实模型请求，会话日志字段 0、插件清单字段 0、OTLP 0、引擎无额外出站连接。
+- 没有真实 QQ / 安装包 / 干净系统验收；这些仍属于 M3-E / M6。
+
+实测细节：
+1. rc2 支持 `--profile <name> --patch <绝对路径> --dump-config`，后置 overlay 生效。
+2. external 禁用 shell 后，`permission`（permission-presets）会 pending，等待 shell；已一并禁用。沙箱仍通过 `sandbox-policy.mode: read-only` 固定。两个 profile 都无 pending。
+3. 录制代理必须保留 rc2 内嵌的官方前缀 `/anthropic`，实际转发到 `https://api.deepseek.com/anthropic/v1/messages`。直接转到根路径 `/v1/messages` 会 404；接口是 Messages SSE，不是 Chat Completions SSE。
+
+## 5. 环境与安全规则
+
+- 不升级任何锁定依赖；运行时二进制不进 Git。
+- Electron 安装使用 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`，打包镜像见 ELECTRON.md。
+- Git Bash 调用 Windows PowerShell 5.1 时先 `env -u PSModulePath`；给 Windows 程序传路径用 `cygpath -w`。
+- Key 不回显、不入日志；日志只记元数据。自有插件不写 stdout。
+- rc2 默认工作区行为不变，但当前本机插件通过内置 pre-execute ask 对每次工具调用确认；权限、审批审计与最终执行仍归运行时。记忆插件加入后的两实例真实隐私复验已通过；后续工具裁剪或提醒等再次改 profile 后仍要重跑。
+- 不读取宿主机技能和指令；会话日志上传、插件清单、OTel 继续关闭。
+- 真实模型测试会付费，本轮已获用户授权；后续无 Key 时优先 `npm run contracts`。
+- 旧单实例会话可能包含工具输出；迁移只保留兼容历史，不代表新工具权限被继承。
+- 已完成的目录清理仅限本轮生成的唯一测试目录。没有删除实际用户数据。
+
+## 6. 常用命令
 
 ```bash
-cd app/core && npm install && npm run check
-DEEPSEEK_API_KEY=… npm run e2e                                  # 约 1～2 分钟，15 项
-E2E_EXEC_PATH="$(cygpath -w ../electron-ui/node_modules/electron/dist/electron.exe)" npm run e2e
-cd app/electron-ui && npm run smoke                               # 语法检查，覆盖 Electron 外壳和 Core
-# 调试 profile：
-export DSH_EXE="$(cygpath -w vendor/dsh/deepseek-harness-sdk-runtime-win-x64.exe)" SPIKE_HOME="$(cygpath -w /tmp/dsh-spike-home)"
-cp app/core/profile/* /tmp/dsh-spike-home/profiles/fatfish/ && node spikes/m2-dsh/pending.mjs
-"$DSH_EXE" --profile fatfish --dump-config      # 需要设置 DSH_HOME；查看组装后的全部插件行
+cd app/core && npm run check && npm run contracts
+E2E_EXEC_PATH=<electron.exe> npm run identity-check       # 无付费，本机夹具
+E2E_EXEC_PATH=<electron.exe> npm run memory-check         # 无付费，真实记忆插件/Core IPC
+E2E_EXEC_PATH=<electron.exe> npm run reminder-runtime-check -- --evidence <绝对目录> # 无窗口/付费；实际 60 秒
+E2E_EXEC_PATH=<electron.exe> npm run inbox-runtime-check -- --evidence <绝对目录> # 无窗口/付费；ACK/磁盘/满箱恢复
+E2E_EXEC_PATH=<electron.exe> npm run workspace-check -- --evidence <绝对目录> # 无窗口/付费；真实目录/审批/上下文
+npm run model-check -- --evidence <绝对目录>             # app/core；真实 Core/SDK 回环夹具，无窗口/付费
+npm run model-protocol-check -- --evidence <绝对目录>    # 三种兼容协议，无付费
+npm run computer-capability-check -- --evidence <绝对目录> # app/core；模块加载/工具目录，无桌面动作
+npm run reminder-check && npm run channel-lifecycle-check # 无窗口；时间/持久化/启停回归
+DEEPSEEK_API_KEY=… E2E_EXEC_PATH=<electron.exe> npm run e2e
+# 以下 smoke / *-ui 会打开窗口，当前禁止执行；仅供获新明确允许后使用
+cd app/electron-ui && npm run smoke
+npm run inbox-check && npm run inbox-main-check           # 普通 Node，不创建窗口，当前允许
+npm run workspace-main-check                              # 普通 Node VM；不是原生选择器验收
+npm run model-main-check && npm run model-view-check      # 普通 Node VM/元素夹具
+npm run model-data-check -- --evidence <绝对目录>          # 实际 Core/SDK，壳/元素为夹具
+npm run pairing-ui -- --evidence <绝对输出目录>             # 无付费，真实外壳联调
+
+# 两个 profile 的隐私实测；自动安装受管 profile 并加载 common overlay
+DSH_EXE=<绝对exe路径> SPIKE_HOME=<临时目录> DEEPSEEK_API_KEY=… node spikes/m2-dsh/run.mjs privacy fatfish-external
+DSH_EXE=<绝对exe路径> SPIKE_HOME=<另一个临时目录> DEEPSEEK_API_KEY=… node spikes/m2-dsh/run.mjs privacy fatfish-local
+# pending 调试（先通过上面的 spike 安装 profile；额外参数是 overlay 绝对路径）
+DSH_EXE=… SPIKE_HOME=… node spikes/m2-dsh/pending.mjs fatfish-external <common.patch.yml绝对路径>
 ```
 
-## 6. 必须遵守的规则（违反任意一条都是事故）
+## 7. 下一步：继续 M4 → M5，不缩小目标
 
-1. **外部渠道 → 只进对外实例，对外实例没有任何能接触本机的工具**（ARCHITECTURE §4.2）。改动 profile 后，必须用录制代理实测请求体里的 `tools[]`。
-2. **主人身份只看绑定表**（平台上报的账号），不看消息正文，也不看提示词。
-3. **profile 的隐私开关不能重新打开**：`session-log-deepseek`、`plugin-package-inventory-deepseek`、OTel、宿主机技能和指令。
-4. **rc2 没有** `approvalRequests` / `user-question/ask`。不要参考 DSH master 分支的文档来写协议代码，以 exe 的实际行为为准（可以用 `grep -a` 在 exe 里搜字符串来确认）。
-5. 日志只记录元数据；Key 不回显；自有插件不写 stdout。
-6. 面向用户的文案遵守禁用词（CLAUDE.md）。
-7. 版本全部锁定；不引入需要联网更新的依赖。
-8. 提交信息格式：`type(scope): 中文描述`，结尾加上 Co-Authored-By。
+1. 用户明确不接 QQ 也要能用：新安装 QQ 默认关闭，旧已配置渠道兼容保留；首次流程先本机，设置中主动启用才走账号风险/登录/配对。开发依赖已在 ROADMAP 明确拆分，但 M3-E 仍是 QQ 交付门禁，不删除或冒充通过。
+2. M4-1 已验收，M4-2/4 视觉修正后的复验待允许；M4-3 收件链路、M4-7 工具裁剪/工作区已完成无窗口验证。M4-8 已按锁定 SDK 的模块缺失证据走失败分支，留 v1.x；M4-9 已完成代码/后台、两实例真实兼容接口验证，原生表单仍待允许。继续 M4-10/11 与 M5，不用等待窗口许可才推进独立后台工作。再次改 profile 后继续录制真实请求工具/隐私字段。工作区原生选择器、真实窗口提醒/最小化提示仍待明确允许，尚无 Windows 系统通知实现。M4-5/6 已有本地界面证据，不等于整体 M4 完成。
+3. M5-1 激活服务真实本地全流程已通过（39 项各三轮）。M5-2 双验签（含独立模型测试）代码/后台已通过，M5-3 表单已接且只做无窗口检查。M5-4 基础向导与独立可选 QQ 分支已完成无窗口 37 项链路三轮，原生验收待允许；M5-5 代码保护与隔离资源检查现已 41 项三轮通过，未实际打包；真实未安装包现已通过，人格抽样已在第 1 次实际请求后遇错停止（0 个完整轮次），不得自动重试或重新分配额度；先确认是否允许在剩余 49 次内恢复，再补所保留的原生/真实 QQ、干净系统与正式交付门禁。正式公钥/域名/部署不擅自决定；窗口禁令仍有效。
+4. 数据清理缺口已完成代码/无窗口三轮，见 M5_DATA_CLEAR.md；原生确认/退出仍待。接着按完整 M3～M5 验收清单补剩余代码债务，不用回环测试冒充实际窗口/QQ/干净系统。旧人格编辑/导入的四处系统 confirm/alert 已改成就地交互；删除示例复活也已修复，33/16/13 项无窗口三轮，见 M5_PERSONA.md。
+5. 真实模型调用仅限少量已获允许的必要测试，50 轮等大批量应先说明费用边界。绝不重复媒体任务或泄露 Key。
+6. 此前独立数据目录 `C:/Users/CAIDEN~1/AppData/Local/Temp/fatfish-m3e-live-UPJfi5` 可用于本机原型复测；旧 PID 43300 已终止，不能凭旧 live-status.json 当作仍在运行。新运行前重新核对进程。密钥文件不得回显。
 
-## 7. 待用户决定的事项
+## 8. 当前本机试用窗口
 
-见 ARCHITECTURE §16 的 D-1～D-10。**拿不到用户答复时按推荐方案执行，并在文档中注明「按推荐方案执行，待确认」。**其中 D-4（自由活动先接哪个平台）和 D-9（v2 怎么收费）只能由用户决定，不能替用户选。
-
-## 8. 下一步的具体动作（M3-A 第 1 步）
-
-1. 在 `dsh-client.mjs` 的 `start()` 中支持 `this.args`（附加参数），并在 EngineHost 中传入 `--patch <common.patch.yml 的绝对路径>`。先用 `--dump-config` 确认 `--patch` 写在 `--profile` 后面时能生效（CLI 帮助说明它属于启动器参数）。
-2. 拆分 profile 目录，写 `fatfish-external` 的禁用清单，用 `pending.mjs` 逐行排查连带影响。
-3. 把录制代理搬进 e2e，增加「对外实例 `tools[]` 为空」等 3 条用例（ROADMAP M3-A 验收）。
+2026-10-25 已在同一独立临时目录重开新版，仅本机模式，启动 PID 38572（使用前必须重新核对）。`live-status.json` 新增 qq_enabled、desktopPid、local_stats；正常初始状态应为 qq_enabled=false、backend=false、Core=true，未试聊时 engines 为空。本机默认不会拉起 QQ。旧账号风险标记如存在已改名保留，基础风险告知由用户自行确认；不代勾选、不自动发送真实消息。自动验收均是本地夹具，用户在此窗口主动试聊则使用已配置真实模型 Key。

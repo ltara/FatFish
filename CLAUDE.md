@@ -54,17 +54,31 @@ node spikes/m2-dsh/pending.mjs   # 列出没有激活的插件行
 
 Electron 外壳 → fork **Core**（`app/core`，走 IPC）→ Core 的 InstanceManager 管理 **1～3 个 DSH 进程**（`vendor/dsh/*.exe --profile fatfish-<实例>`，stdio JSON-RPC，每个实例的 `DSH_HOME` 是 `%AppData%\FatFish\dsh\<实例>`）→ Channel 层接入 IM 平台（`channels/qq.mjs` → NapCat WS `:3001`）。自有 Cordis 插件（审批、记忆、提醒……）通过回环 HTTP 把请求交给 Core 处理，**数据范围由 Core 决定**。
 
-**现状**：M3 第 1、2 步完成，但目前是**单实例**（profile `app/core/profile/`，`workspace-write` + 审批），主人只认 `config.owner_qq`（没有界面能设置它），所以真实渠道不会回复任何人。`app/shell/`（`:8787`）仍然会被启动，`app/bridge/` 已经不再启动，两者都要在 M3-C 删除。下一步是 M3-A（三实例框架 + 对外实例无工具）。
+**现状**：M3 第 1、2 步及 **M3-A、M3-B 已完成**（当前工作区，尚未提交）。external/local 独立进程、DSH_HOME 与工作区，M3-A 当时对外实测 `tools[] = []`，M4 当前严格白名单为三项记忆（`memory_save`、`memory_search`、`memory_forget`）和三项提醒（`remind_create`、`remind_list`、`remind_delete`）；本机按需启动、空闲 10 分钟停止，审批走 gateway。身份只认 `owners` 绑定表，旧 `owner_qq` 已迁移并删除；设置页可用 6 位一次性配对码绑定、查看和解除。配对码不进模型；换码不重置尝试限制；解绑会拦住在途回复及排队消息。auto 留给 v2。**M3-C 也已完成**：旧设置服务、旧回复引擎、空功能开关已删除，暂停通过启动握手与 IPC 同步且跨重启保留；人格应用立即重载并保留会话。**M3-D 也已完成**：错误分类、首页真实统计、实时状态和原生托盘同步均通过无付费验收。**M4 本机独立入口、对话和审批已实现并通过本地验收**：新安装 QQ 默认关闭，基础流程不再强制扫码，启用渠道才单独确认账号风险；本机每次工具调用经运行时内置审批机制确认，含工作区写入。M4-1 记忆核心已验收（56 项连续 3 轮、两实例真实隐私复验），见 `docs/M4_MEMORY.md`；记忆页与公开资料编辑已接通，视觉修正后的最终复验尚未完成；用户按 Esc 停止界面走查后，未获新的明确允许前不得恢复界面操作，继续无窗口的代码/Core 工作。提醒 Core 与本机幂等收件链路已实现并完成无窗口验证（43 项调度、41 项收件、15 项 Main VM、16 项恢复/反压、23 项运行时真实 60 秒），Main/preload/renderer 已接线；实际窗口提醒/最小化提示与真实 QQ 验收仍待完成，当前没有 Windows 系统通知实现，见 `docs/M4_REMIND.md`；M4-7 工具裁剪与工作区已实现，29 项 Core 与 21 项 VM 检查各连续三轮、最新两实例实际工具/隐私复验通过；local 为严格 21 项工具，对外仍为 6 项，原生选择器/设置页仍待允许后验收，见 `docs/M4_WORKSPACE.md`。M4-8 已探测：锁定 SDK 无法加载界面操作服务/native/MCP 模块，13 项检查连续三轮，无桌面动作或付费；按路线图失败分支，v1 不启用，留 v1.x，见 `docs/M4_COMPUTER_USE.md`。M4-9 模型切换代码与后台已实现：Core 57、Main 17、表单 27、数据链路 13 各三轮；external/local 真实兼容接口各 1 次通过，原生模型表单待允许，见 `docs/M4_MODELS.md`。M4-10/11 仍待完成。M5-1 独立激活服务已完成真实本地 Wrangler/D1 39 项连续三轮，未部署；M5-2 独立验签/指纹与正常/独立模型测试门禁已接并完成无窗口三轮验证（Core 30、Main 10、客户端/Worker 14）；M5-3 表单已接，13 项元素检查三轮，原生复验待允许。正式信任锚未配置、失败关闭，测试只换隔离副本的公开锚，禁止加运行时跳过开关；M5-4/5 后续代码和隔离检查见下段；原生/正式安装包门禁仍待，见 `docs/M5_LICENSE.md`。M3-E 真实 QQ 验收单独保留。尚未连接真实 QQ 验收。
 
 ### Electron UI（`app/electron-ui`）
 
-`main.js`（窗口、托盘、所有 `ipcMain.handle`）↔ `preload.js`（`contextBridge` → `window.fatfish`，每个 IPC 通道对应一行封装）↔ `renderer/`（纯 HTML/JS/CSS，没有框架）。**新增涉及主数据的功能，要同时修改 `main.js`、`preload.js`、`renderer.js` 三处。**`service-manager.js` 负责拉起后台和 Core：`getCore()` 读取 Core 上报的状态快照，`sendCore()` 下发命令。登录是应用内的 `<webview>` 打开 `http://127.0.0.1:6099/webui/`，**禁止**使用 `shell.openExternal` 或系统浏览器。后台启动器的 `.bat` 必须是 CRLF 换行（`.gitattributes` + `scripts/ensure-crlf*` 保证），否则 cmd 会立刻退出。
+`main.js`（窗口、托盘、所有 `ipcMain.handle`）↔ `preload.js`（`contextBridge` → `window.fatfish`，每个 IPC 通道对应一行封装）↔ `renderer/`（本地构建的 React + shadcn/ui 呈现壳，既有控制器保留业务与安全逻辑）。界面源码为 `renderer-src/App.tsx` 与 `renderer-src/components/ui/`；`renderer/index.html` 是带激活锁的生成首帧，勿手改，修改后执行 `npm run build:ui`，`npm run check:ui` 做类型检查。**新增涉及主数据的功能，要同时修改 `main.js`、`preload.js`、`renderer.js` 三处。**`service-manager.js` 负责拉起后台和 Core：`getCore()` 读取 Core 上报的状态快照，`sendCore()` 下发命令。登录是应用内的 `<webview>` 打开 `http://127.0.0.1:6099/webui/`，**禁止**使用 `shell.openExternal` 或系统浏览器。后台启动器的 `.bat` 必须是 CRLF 换行（`.gitattributes` + `scripts/ensure-crlf*` 保证），否则 cmd 会立刻退出。
 
 ### 数据与路径
 
+开发热更新（2026-10-27）：既有开发快捷方式与 `npm run dev` 启动时编译并监听界面源码，CSS 热替换，组件/控制器在无请求、审批与草稿时整页刷新；主进程/preload/Core/依赖改动须手动重开。只同步隔离代码副本，不监听用户数据、不自动重启后台。开发脚本不进正式包；74 项隔离检查已通过，原生生命周期仍由用户手动验证，见 `docs/DEVELOPMENT_HOT_RELOAD.md`。不得为验证热更新擅自启动现有窗口或调用模型。
+
 用户数据在 `%AppData%\FatFish\`（完整布局见 ARCHITECTURE §14），可以用 `FATFISH_APPDATA` 覆盖。开发和打包后的资源路径不同（仓库根目录 vs `process.resourcesPath`，见 `docs/ELECTRON.md` 和 `app/electron-ui/package.json` 的 `build.extraResources`）。
 
+M5-4 本机优先的可续首次设置代码/无窗口三轮通过：进度 27、控制器 24、实际挂载 9、模型表单 31、激活/告知 15、Main 门禁 12、实际 Core 数据链路 37。QQ 分支单独选择；真实成功凭据才完成，进度恢复不自动重测/重发，未同意基础告知不启动服务。M5-5 构建期公开锚注入、八模块混淆和 ASAR/PE 检查已接，隔离资源夹具 41 项三轮；没有正式密钥/部署/打包。原生 UI、真实 QQ、实际安装包和干净系统门禁仍待，见 `docs/M5_ONBOARDING.md`、`docs/M5_PROTECTION.md`。不是整个 M5 完成；继续保持用户的窗口禁令。
+
+数据清理契约现已修复，默认保留 Key/许可证，独立确认、在途写互斥、安全停机、链接不追踪，成功退出、不自动重开；22/15/17/14 项无窗口各三轮，当前向导 37/保护 41 也重新三轮，见 `docs/M5_DATA_CLEAR.md`。原生清理控件仍未验收；不要操作普通试用窗口或实际用户数据。
+
+人格就地交互和示例删除持久化现已 33/16/13 项无窗口三轮，见 `docs/M5_PERSONA.md`。**最新许可**：可以在独占临时目录生成本地未安装测试包，只检查资源/代码保护/后台，不运行界面、不安装发布、不使用正式密钥；普通试用窗口和实际用户数据仍不操作。正式安装程序/签名/部署/提交推送未获授权。
+
+真实本地未安装包现已 22 项通过（仅 Node 模式后台，界面/安装/发布均未运行），见 `docs/M5_PACKAGE.md`。保护夹具已扩为 43 项，修正默认 dist 路径与 Windows 多级 ASAR 名称到本机 API 的转换。**最新模型许可**：最多 50 次真实出站模型请求，工具后续也计数；只在新临时上下文、不读历史/不连 QQ，限制输出、遇错停止、不自动付费重试。截至包验收付费为 0；随后人格抽样已实发 1/50 次，首请求未完整回复，按约定停止且未重试。测试代理压缩响应缺陷已离线修复，29 项和真实引擎 gzip 回环各三轮；不能断定首请求根因，M4-11 仍未通过。剩余 49 次须再次明确允许后才恢复，不重置账本。见 `docs/M4_PERSONA.md`。
+
+关于页已补激活码末四位（非鉴权本机显示元数据，不存完整码）；32 项实际 Main/preload/about 无窗口检查三轮，最新真实未安装包 23 项通过。默认保留尾号与许可证，独立清激活才删除；原生界面仍待。见 `docs/M5_ACTIVATION_DISPLAY.md`、`docs/M5_COMPLETION_AUDIT.md`。
+
 ## 架构红线
+
+开发激活补充（2026-10-26）：用户要求固定开发码，`npm run dev` 使用开发专用本机签发器与隔离代码副本，私钥只留开发服务端，正式信任模块和双重验签不改。脚本不进构建资源，不能加入打包后可用的开发绕过开关。新入口仅写代码、尚未运行验收；步骤见 `docs/DEVELOPMENT_ACTIVATION.md`。用户已要求界面验证由他手动操作，后续不得自动操作窗口；程序启停也仅限用户明确要求的范围。
 
 - **按输入来源划分信任**：所有外部渠道的消息**只进对外实例**；对外实例**没有任何能接触本机的工具**（读写文件、执行命令、`web_fetch`、子代理、技能等，清单见 ARCHITECTURE §4.2），沙箱是 `read-only`，工作目录是空目录。**改动 profile 后，必须用录制代理实测请求体的 `tools[]` 与白名单一致**，不能只看配置。本机实例只接 Electron 的对话页。
 - **能力不靠提示词约束**：「不许做什么」要通过「这个实例里没有对应工具」来保证。DSH 的权限按进程生效，隔离就必须用不同进程和不同的 `DSH_HOME`。

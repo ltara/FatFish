@@ -22,6 +22,8 @@
 | **本机助手** | 主人坐在电脑前，在肥鱼窗口里和它对话，让它整理文件、执行命令、操作应用（每次都要审批） | v1 |
 | **自由活动** | 主人说「去玩吧」，肥鱼用主人事先给它准备的**它自己的**账号去社交平台、视频平台逛、发帖、点赞、评论，回来再跟主人讲见闻 | v2 |
 
+**两种 v1 用法互相独立，不以 QQ 登录作为软件登录。** 新安装 `channels.qq.enabled = false`：只启动 Core，本机实例按需使用；不启动 QQ 后台、不连接渠道、不预热对外实例，也不把未接入 QQ 显示为故障。主人在设置里主动启用 QQ，确认渠道风险后才启动后台、登录、配对。关闭渠道保留绑定资料，但停止远程收发和本客户端拥有的后台进程；不能按全局进程名清理其他 QQ/后台。旧配置若没有此字段但已经配置过渠道，保留原行为。
+
 ### 商业模式
 
 | 项 | 决定 |
@@ -86,7 +88,7 @@
 | DSH × 1～3 | `vendor/dsh/deepseek-harness-sdk-runtime-win-x64.exe` | 由 Core 拉起，stdio JSON-RPC。对外实例常驻；本机实例按需启动；自主实例只在自由活动期间运行 |
 | 后台登录 / WS | `vendor/napcat` | `:6099` 登录页，`:3001` WS |
 
-要删除的旧组件：`app/shell/local-server.mjs`（`:8787`）、`app/bridge/`、`runtime/outbound_paused` 和 `runtime/persona_rev` 两个文件标志（改走 IPC）（见 ROADMAP M3-C）。
+M3-C 已删除旧设置服务、旧回复引擎和人格 revision 文件。`runtime/outbound_paused` 仅保留作跨重启持久化：Core 启动握手获取一次初始状态，运行中通过 IPC 更新，不逐消息读取文件（见 ROADMAP M3-C）。
 
 ---
 
@@ -99,7 +101,7 @@
 | 输入来自 | 任何能私聊小号的人（以后还有其他平台） | 坐在电脑前的主人（窗口内对话页） | 互联网内容（帖子、评论、网页） |
 | 谁能触发 | 只有已配对的主人 | 能打开窗口的人 | 主人通过「去玩吧」触发，Core 按限额启动 |
 | DSH 权限 | `read-only` 沙箱，且**移除所有敏感工具行**（§4.2） | `workspace-write` + `ask` 审批 | `read-only` 沙箱 + 只保留自主活动工具，工作目录是它自己的房间 |
-| 可用工具 | 记忆、提醒、时间、开始自由活动（v2）、转交任务（v1.x） | DSH 全部工具（M4 再裁剪掉明显无关的），加上记忆和提醒 | 自有浏览器工具、自己房间里的笔记、日记、活动上报 |
+| 可用工具 | 记忆、提醒、时间、开始自由活动（v2）、转交任务（v1.x） | M4-7 裁剪后的 Windows 21 项工具（§4.3），含记忆和提醒 | 自有浏览器工具、自己房间里的笔记、日记、活动上报 |
 | 审批 | 不需要（没有会触发审批的工具） | 弹窗（`fatfish-approval` → Core → 窗口） | 不需要；对外发布前可选「先问主人」（§9.4） |
 | 能读的记忆 | 主人私有记忆 + 伙伴日记 | 同左 | **只有**「主人允许公开的资料」和它自己的日记 |
 | `DSH_HOME` | `dsh/external` | `dsh/local` | `dsh/auto` |
@@ -109,7 +111,7 @@
 
 **三个实例共用同一份人格**（人设库中当前选中的那一条），所以用户感觉始终是同一个伙伴。区别只在于各自能做什么、能看到什么。
 
-> 现状：M3 第 1、2 步实现的是**单实例**（profile `fatfish`，即 `workspace-write` + 审批）。M3-A 要把它拆成上表的结构。在拆分完成之前，**真实 QQ 渠道上不能对任何人放行**，现在因为 `owner_qq` 为空，事实上就没有人被放行。
+> 现状（2026-10-25）：M3-A、M3-B 已完成。external/local 独立进程和数据目录，对外实例真实请求 `tools[] = []`；auto 仍留给 v2。本机首次 IPC 对话请求时启动，打开对话页预热的 UI 接线留到 M4。身份已经使用 owners 和配对码，旧 owner_qq 已迁移并删除；空绑定表不放行任何人。M3-C/D 已通过，本机独立对话和逐次工具审批已接通；新安装 QQ 默认关闭，M3-E 真机验收仍未通过。
 
 ### 4.2 对外实例必须移除的工具行
 
@@ -132,7 +134,10 @@ M2 的 sdk profile 组装结果（`--dump-config`）中，所有会接触本机�
 
 **验收要求（M3-A）：工具白名单必须实测，不能只看配置。**用 `spikes/m2-dsh/run.mjs privacy` 场景的录制代理拿到真实请求体，取出其中的 `tools[].name`，必须**严格等于**白名单（v1 时为空集，或只有自有插件的工具）。这个检查要写进 `app/core/dev/e2e.mjs`，以后每次改 profile 都要跑。
 
+2026-10-25 M4-1 后续已加入 M4-3 提醒，当前白名单为 `memory_save`、`memory_search`、`memory_forget`、`remind_create`、`remind_list`、`remind_delete`，由 `app/core/tool-contract.cjs` 供验收精确比较；不再是 M3-A 当时的空集。六项工具只访问 Core 管理的记忆/提醒数据，不能访问任意宿主路径，详见 `M4_REMIND.md`。
+
 此外：
+- rc2 实测连带依赖：关闭 shell 后，`permission`（permission-presets）等待 shell 而 pending；external 一并禁用该行。`sandbox-policy` 仍固定 `read-only`，无工具可以改变权限。两个 profile 均验收为无 pending。
 - 沙箱模式固定为 `read-only`（`sandbox-policy.config.mode`，不读环境变量），作为第二道保险。
 - 对外实例的工作目录是一个空目录，即使某个工具漏网了，也读不到主人的文件。
 - 人格后缀里写明：「你在聊天渠道里无法操作电脑；主人想让你在电脑上做事时，请让他回到电脑前的肥鱼窗口」。
@@ -141,9 +146,9 @@ M2 的 sdk profile 组装结果（`--dump-config`）中，所有会接触本机�
 
 - 只能从 Electron 的「对话」页进入（IPC → Core → local 实例）。不接任何外部渠道。
 - 沿用 M2 和 M3 已验证的 profile：`workspace-write` + `fatfish-approval` 插件。审批正文直接用 `displayReason.zh`。
-- 注意：写入工作区和 `%TEMP%` **不会触发审批**（M2 实测）。所以工作区要由主人在设置里明确选定，默认是 `workspace/local`，不能默认指向用户目录。
-- 后续裁剪（M4）：关掉 `plan-mode`、`tool-goal` 这类面向编程的工具，保留 shell、文件、网页和子代理。
-- `computer-use`（操作应用界面）要在 M4 验证它在 rc2 + Windows 下能不能用。能用就加进本机实例，并且必须走审批。
+- rc2 默认允许工作区和 `%TEMP%` 内部分操作（M2 结论仍有效）；M4 已在本机插件通过 **DSH 自带 `tools/pre-execute` → `ask` → ApprovalService** 对每次工具调用要求确认，保留内置 deny/ask，不另建权限引擎。工作区内写入已实测允许、拒绝、超时三条路径。M4-7 已接通设置选择目录，默认 `workspace/local`；更改只重置本机模型会话，保留显示记录与文件，不影响 external。活跃本机轮次/审批期间拒绝更改。工作区是默认操作目录，不是另造的访问控制；目录丢失/被替换为 junction 失败关闭、不回退或重建。原生选择器和界面仍待允许后验收，详见 `M4_WORKSPACE.md`。
+- M4-7 已裁剪 `plan-mode`、goal/todo、workflow、job 管理与插件管理入口；保留 shell、文件、网页读取、技能和子代理。Windows 实际请求精确为 `tool-contract.cjs` 的 21 项 local 白名单；`web_search` 不开放。两实例 profile 隐私与实际工具清单复验通过；不等于逐个保留工具的全部功能认证，见 `M4_WORKSPACE.md`。
+- M4-8 已探测：当前锁定 Windows SDK 无法 import 官方 computer-use 服务及 native/MCP 提供者，`ERR_MODULE_NOT_FOUND`；实际工具目录没有新增界面操作工具。按 ROADMAP 的失败分支，v1 不启用，v1.x 再验证可交付提供者与逐次审批闭环。没有升级引擎、没有做截图/点击，也不能把 master 文档或初始化成功当作已支持。详见 `M4_COMPUTER_USE.md`。
 
 ### 4.4 自主实例（v2）
 
@@ -198,14 +203,16 @@ interface InboundMessage {
 
 ### 6.1 主人绑定
 
-`config.json` → `owners: [{ channel: "qq", account: "12345", boundAt, label }]`（取代 M3 第 1 步里的 `owner_qq`，迁移逻辑：`owner_qq` 非空时转成一条 qq 绑定）。
+`config.json` → `owners: [{ channel: "qq", account: "12345", boundAt, label }]`（M3-B 已实现）。仅在 owners 尚不存在时导入非空 owner_qq，随后删除旧字段；显式空 owners 不能回退到旧主人。写入用临时文件 + 原子替换，保留其他配置；读写失败拒绝绑定，不覆盖损坏文件。
+
+D-1 按推荐方案执行，待确认。配对码只保存在 Core 内存，通过本机 IPC 返回；所有纯六位数字消息（包括旧码、过期码）保留为配对协议，不进入模型。尝试次数按平台和账号计算，换码不清零。解除绑定后，在途回复与尚未发给模型的排队消息也会丢弃。
 
 **配对流程（D-1，推荐方案）：**
 1. 主人在窗口里点「绑定主人账号」，窗口显示一个 6 位数字码，有效期 10 分钟，只能使用一次。
 2. 主人用自己的账号，在任意已接入的平台上，把这 6 位数字私聊发给伙伴。
 3. Router 识别出这是一条与当前配对码完全相同的消息：把 `(channel, from)` 写入 `owners`，回复「配对成功」，同时窗口提示成功。配对码作废。
 4. 同一个账号 10 分钟内只能尝试 5 次，超过就锁定这个账号的配对尝试。配对码消息**不进入任何 DSH 实例**。
-5. 主人可以在设置里查看和解除绑定。解除绑定只能在电脑上操作。
+5. 主人可以在侧栏“平台”中展开 QQ 设置，查看和解除绑定。解除绑定只能在电脑上操作。
 
 因为不需要手动填写账号，平台之间的账号格式差异也就无所谓了。
 
@@ -258,6 +265,7 @@ DSH 的会话历史和压缩只能算「短期记忆」。跨会话、跨实例�
 - 每轮对话开始时，Core 不主动塞入记忆，由模型按需调用 `memory_search`。人格后缀里提示模型：「主人让你记住的事，用 memory_save；可能用得上以前的事，先 memory_search」。
 - **禁止模型自建记忆文件**：M2 发现模型会自己在工作区写 `memory.md`。对外实例是只读的，自然写不了；本机实例要在人格后缀里说明「记忆请用记忆工具，不要写文件」。
 - 界面：「记忆」页能按范围浏览、单条删除、一键清空、导出 JSON（DESIGN §6）。
+- 2026-10-25：核心插件和数据服务已验收；界面已接通，静态修正后最终复验待允许，见 `M4_MEMORY.md`。删除/清空或修改公开资料时先持久化递增的模型上下文代号，再修改记忆；旧活跃调用立即失效，旧 reader 停止、在途旧结果不转发，新 turn 不再恢复旧模型会话。原逻辑会话 ID 对界面保持稳定。旧展示记录与引擎历史文件保留，不声称安全擦除；界面确认必须告知此范围。
 
 ### 7.3 数据流向（硬规则）
 
@@ -278,6 +286,9 @@ auto 看到的任何外部内容 ──✗──► owner 范围（只能以 dia
 - Core 负责计时。到期后，向原会话发送 `session/prompt`（「[提醒到期] 喝水」）。伙伴按人格生成一句话，发到**主人最近活跃的那个渠道**。
 - 「暂停」期间，到期的提醒照常触发，但不发出去。Core 重启后，补发已过期的一次性提醒；周期提醒只补发最近一次。
 - 时间：`time-context` 已挂载，时区为 Asia/Shanghai。`when` 支持绝对时间、相对时长和 cron 三种写法，统一存成 UTC。
+- 2026-10-25 Core 后台与 Main 生产收件数据适配器已实现；真实 Core + 回环模型/消息夹具实际等待 60 秒，Main IPC 用 Node VM 验证，未操作窗口。实际界面与真实 QQ 尚待验收，不能称为完整 M4-3。源实例不随收件渠道变化：外部提醒即使改在窗口接收，也不将其文字作为 local 模型输入。scheduled 上下文无审批/插件执行权。QQ 关闭时忽略旧远程暂停标志，保证纯本机不依赖 QQ；启用时暂停照常积累到期事件、恢复再发。
+- 发送 outbox 先持久化 occurrence/生成状态，暂停和明确未发出时复用文字；生成中断可回退，不重复模型调用。渠道回执不明时保留 uncertain，不盲重发；本机 ack 协议要求父进程幂等持久化。详细状态、限制和证据见 `M4_REMIND.md`。记忆删除和提醒取消是两个独立动作。
+- 本机 `inbox/reminders.json` 在同一个原子事务保存展示消息与 receipt 高水位，持久化成功才 ACK；Core 默认不可投递，Main 校验提醒 ID 目录并确认可用后才放行。满箱/磁盘故障关闭可用性，不静默丢未展示消息；恢复复用缓存。消息只经 `chat-get` 派生合并，不写模型历史/不触发 `chat_send`。只有可见、有焦点的主窗口顶层对话页可标「已展示」，不等于主人已读。
 
 ### 8.2 主动问候（v1.x）
 
@@ -369,7 +380,7 @@ auto 看到的任何外部内容 ──✗──► owner 范围（只能以 dia
 | 自有插件 | `./fatfish-*.mjs`，按实例挂载 | — |
 
 - `dsh-schedule` 在 rc2 的 sdk profile 里**挂载不了**（依赖链：sessionController → fileUploads → web connection）。这就是提醒功能要自写的原因。
-- 目录约定：`app/core/profiles/<实例名>/`（M3-A 时把现在的 `app/core/profile/` 拆成三个目录，公共部分可以用 `--patch` 叠加一个公共补丁文件）。EngineHost 每次启动都会把这些目录整份覆盖到 `$DSH_HOME/profiles/`，用户层的改动不会生效。
+- 目录约定：`app/core/profiles/fatfish-external|fatfish-local/`（M3-A 已实现），公共部分通过 `--patch <common.patch.yml绝对路径>` 叠加，local 插件源在 `profiles/plugins/`；auto 留到 v2。EngineHost 每次启动整份覆盖对应受管 profile，用户层改动不生效。
 - 子进程环境变量：先去掉所有继承来的 `DSH_*`、`DEEPSEEK_*`、`FATFISH_*`，再注入我们自己的值，防止外部的 `DSH_PERMISSION_MODE` 改变权限（已实现）。
 - 已知限制：提示词偏向编程助手、默认工具较多、只验证过 PowerShell 7。详见 `docs/M2_DSH.md` §5。
 
@@ -390,11 +401,13 @@ auto 看到的任何外部内容 ──✗──► owner 范围（只能以 dia
 
 ## 12. 模型切换
 
-- `config.json` → `model: { provider, model, baseURL?, api? }`。三个实例共用一份配置。
-- 内置服务商：`deepseek-official`（默认 `deepseek-flash`）。DSH 原生支持的其他服务商：`openai`、`anthropic`、`moonshotai`、`zai` 等。自定义接口可选 `openai-completions` / `openai-responses` / `anthropic-messages` + baseURL + Key。
-- 实现：写一个 `llm-*` 补丁到公共 profile，`initialize` 时传入 route。改完后由 EngineHost 检测到变化并重启实例（已实现变化检测）。
-- 设置页提供「测试连接」按钮：起一个临时会话发一句「你好」，然后报告是否成功（M4）。
-- 这也是「不更新」前提下应对模型下线的手段。
+- 三种场景共用一份模型配置；v1 只实际运行 external/local，auto 随 v2 验收。设置含服务商、模型名称、Key、自定义接口格式和地址，显式保存/测试，无自动付费测试。
+- `config.model` 保存 route、容量声明、generation 和随机 keyRef；完整 Key 仅在 `secrets/model-<UUID>.key`。先 fsync 新 Key，再原子提交 config 指针，成功后才清旧 Key；失败不丢旧配置。旧默认 `deepseek_api_key` 继续兼容，下一次更改迁移。
+- 内置默认 `deepseek-official/deepseek-flash`；其他服务商和自定义通过声明的 `llm-pi-ai` 兼容路由（Chat Completions / Responses / Messages）。预设目录来自 Core，不把上游 master 的模型目录当锁定 rc2 的事实。地址、模型、容量可自行调整以应对上游变化。
+- Core 独占保存；主窗口顶层 frame 经 Main/preload/owner-only IPC 访问，公开状态只有 Key 是否存在和末尾部分。留空复用只限同认证范围，绝不把原 Key 发送给新地址。旧表单版本和活跃轮次阻止切换。
+- 每个实例动态补丁只有 Key 环境变量引用。保存新版本后停止空闲实例并启用新物理上下文，旧聊天不发给新提供者、展示记录保留；后续人格和检索记忆仍会发给当前接口，界面告知。
+- 测试使用单独临时 DSH_HOME/空目录/固定人格，实际 tools 为空，不读主人聊天或记忆、不保存草稿、禁自动重试，界面只收成功/固定错误分类而不收模型原文。M5 许可证门禁也必须覆盖这条启动路径。
+- 2026-10-26：代码/无窗口三轮与两实例各一次真实兼容请求通过；原生设置表单/缩放待用户允许，其他服务商不宣称逐家实测。详细实现、协议来源与证据见 `docs/M4_MODELS.md`。
 
 ---
 
@@ -409,24 +422,33 @@ auto 看到的任何外部内容 ──✗──► owner 范围（只能以 dia
 - 激活码：闲鱼发货时发放，每个码最多绑定 2 台设备。
 - 机器指纹：`MachineGuid` + 系统盘卷序列号，加盐后做 SHA-256。只上传哈希。
 - 许可证：`{ code_hash, fingerprint, issued_at, edition }` + 签名。公钥内置在客户端。**永久有效，没有过期时间，也不做复核。**`edition` 字段预留给 v2 等新版本使用（D-9）。
+- 显示补充（2026-10-26）：Main 激活成功后可单独保存原码末四位及许可证字节哈希。只有独立验签通过且匹配当前许可证时才显示；它是可编辑的本机元数据，不是签名字段/授权凭据，不改变上述协议。旧证缺少尾号不联网补录，也不从码哈希伪造。默认数据清理随许可证保留，独立勾选清激活才删，见 M5_ACTIVATION_DISPLAY。
 - 校验：主进程校验一次，Core 再独立校验一次，Core 验签不通过就不拉起任何 DSH 实例。关键代码用 bytenode 编译或做混淆。目标只是让破解成本高于售价。
 - 服务端：Cloudflare Workers + D1。接口只有 `POST /activate`、`/admin/*`（查询、解绑、作废），私钥存在 Worker secret 里，并做离线备份。服务端代码放在 `activation-server/`，不进安装包。
 - 风险：激活服务就是产品的「寿命」。已激活的用户不受影响，新用户和换机用户依赖它。
+- 2026-10-26 M5-1：`activation-server/` 已有真实本地 Worker/D1 验收（39 项连续三轮），不进安装包、没有部署。签名封装为 `{payload, signature}`，payload 是有序紧凑 JSON 原始字节的 base64url，含 version/product/上述许可证字段，具体契约见服务端 README。两台容量与 active 条件用单条写语句原子检查。**作废/解绑不撤销已发出的永久离线许可证**，只影响未来签发与设备名额；不能虚称实时吊销。M5-2 现已实现独立指纹/验签及正常实例/连接测试门禁，Core 30、Main 10、真实本地 Worker/客户端 14 项各三轮，表单/风险元素 13 项三轮；原生激活 UI 未验收。正式公钥/地址保留 null，失败关闭；测试只在隔离源码副本更换公开锚，没有生产环境跳过开关。向导/构建保护代码进度见以下说明；正式服务配置、安装包与原生门禁仍待。详见 `M5_ACTIVATION.md`、`M5_LICENSE.md`。
 
 ---
+
+M5-4：本机基础流程独立于可选 QQ；Main 独占进度，以当前模型成功测试、本机真实回复和 Core 主人正常送达元数据为凭据。延后不等于完成，风险确认前 Main 不启动服务；不自动测试/发消息。进度保存失败仅在同一 Main 进程内暂存凭据，恢复后重读落盘；不承诺跨进程未知付费结果自动恢复。代码/无窗口三轮通过，原生和真实 QQ 仍待，见 `M5_ONBOARDING.md`。
+
+M5-5：受控公开 JSON 只供构建使用，不是客户端运行时开关；八个验签/入口模块在复制资源中混淆，源码保留 null。保护 ASAR 后更新 Windows PE 内嵌头哈希，签名前后分别检查；隔离代码/最小 PE 资源夹具 41 项三轮通过，未实际制作应用安装包或签名。清单只是本地构建审计，不是根信任，详见 `M5_PROTECTION.md`。
 
 ## 14. 本机数据
 
 ```
 %AppData%\FatFish\
-  config.json            模型 route、owners 绑定、各渠道配置、自由活动限额、开关
+  config.json            模型 route、owners 绑定、渠道、本机工作区/上下文代号、自由活动限额、开关
   license.json           许可证
+  activation-display.json 可选末四位/许可证字节哈希，仅显示，不用于验签
+  onboarding.json        Main 首次设置进度/摘要，无正文、完整 Key 或原始账号
   personas.json          人设库（当前人格 = 三个实例共用的 personaPrefix）
   persona.txt            旧文件，兼容读取
   memory\*.jsonl         记忆库（按范围分文件）
   reminders.json         提醒
+  inbox\reminders.json   本机仅展示提醒与幂等 receipt（Main 拥有）
   activity.jsonl         自由活动记录（v2）
-  secrets\               deepseek_api_key（以后按服务商分文件）、local_token
+  secrets\               model-<UUID>.key（config 指针）、旧 deepseek_api_key（兼容）、local_token
   dsh\external|local|auto\   各实例的 DSH_HOME（profiles、sessions、storages）
   workspace\external\    对外实例的空工作目录
   workspace\local\       本机实例的默认工作区
@@ -435,7 +457,7 @@ auto 看到的任何外部内容 ──✗──► owner 范围（只能以 dia
   runtime\               PID 文件、stats.json（当日计数）
 ```
 
-- 「清除本地数据」要清掉所有会话、记忆、提醒、活动记录和伙伴的房间；Key 和许可证要单独确认后才清除。
+- 「清除本地数据」要清掉所有会话、记忆、提醒、活动记录和伙伴的房间；Key 和许可证要单独确认后才清除。实现采用固定应用数据范围，工作区文件不删除，目录链接只移除链接。默认保留 Key 及其认证路由/版本指针；有在途命令拒绝清理，开始后锁写/安全停机；多文件失败不承诺整批回滚，显式报告并只接受再次确认的重试，成功退出。代码和无窗口三轮通过，原生验收待允许，见 M5_DATA_CLEAR.md。
 - 「导出」包括人设、记忆、配置，不包括 Key、许可证和浏览器登录状态。
 - 「换机迁移」（v1.x）：导出包加上会话 JSONL，在新机器上导入。
 
@@ -451,8 +473,8 @@ auto 看到的任何外部内容 ──✗──► owner 范围（只能以 dia
 | ~~`:8787` 设置服务~~ | 删除（M3-C） | — |
 
 IPC 消息（`app/core/server.mjs` 文件头注释是权威定义，新增消息时同步更新那里）：
-- Core → 主进程：`engine`（按实例区分）、`channel`、`self`、`stats`、`turn_error`、`approval`、`pairing`（M3-B）、`chat_event`（本机对话流，M4）、`outing`（v2）
-- 主进程 → Core：`pause`、`reload`、`shutdown`、`approval_answer`、`pairing_start|cancel`、`owner_remove`、`chat_send`（M4）、`outing_stop`（v2）
+- Core → 主进程：`engine`（按实例区分）、`channel`、`self`、`stats`、`turn_error`、`approval`、`owners`、`pairing`、`identity_result`（requestId 关联）、`chat_event|chat_result|turn_end`（M3-A 已接线，用户对话页待 M4）、`outing`（v2）
+- 主进程 → Core：`pause`、`reload`、`shutdown`、`approval_answer`、`owners_get`、`pairing_start|pairing_cancel`、`owner_remove`、`chat_send`（已有本机 IPC 测试入口，界面待 M4）、`outing_stop`（v2）。主人管理的 Electron IPC 只接受主窗口顶层 frame；其他窗口和子 frame 无权调用。
 
 ---
 
@@ -514,7 +536,7 @@ app/
     instance-manager.mjs 三个实例的生命周期（M3-A）
     engine-host.mjs      单个 DSH 进程（已实现）
     dsh-client.mjs       JSON-RPC（已实现）
-    router.mjs           渠道 → 身份 → 实例 → 会话（已实现单实例版本）
+    router.mjs           渠道 → 身份 → external → 会话（已实现；配对待 M3-B）
     identity.mjs         owners 与配对码（M3-B）
     gateway.mjs          自有插件的回环 HTTP 入口（M3-A，把审批服务从 engine-host 中抽出来）
     memory-store.mjs / reminder-store.mjs / outing.mjs

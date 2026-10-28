@@ -2,10 +2,12 @@
  * AppData layout + small readers shared by Core modules.
  * Root: FATFISH_APPDATA, else %APPDATA%\FatFish, else ~/.fatfish (dev).
  */
-import { readFileSync, existsSync, mkdirSync } from "node:fs";
+import { readFileSync, existsSync, mkdirSync, cpSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
+import channelConfig from "./channel-config.cjs";
+import modelConfig from "./model-config.cjs";
 
 export const CORE_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -27,6 +29,30 @@ export const paths = {
   dshHome: join(root, "dsh"),
   workspace: join(root, "workspace"),
 };
+
+export function instancePaths(name) {
+  if (!["external", "local"].includes(name)) throw new Error("unknown_instance");
+  return { dshHome: join(paths.dshHome, name), workspace: join(paths.workspace, name) };
+}
+
+/** Preserve original data; keep legacy owner session IDs via a routing map. */
+export function migrateLegacySessions() {
+  const home = instancePaths("external").dshHome;
+  const legacy = join(paths.dshHome, "sessions");
+  const marker = join(home, "legacy-session.json");
+  const cfg = loadConfig();
+  const owner = Array.isArray(cfg.owners) ? String(cfg.owners.find((o) => o?.channel === "qq")?.account || "") : String(cfg.owner_qq || "").trim();
+  if (!existsSync(legacy) || !owner) return "owner-main";
+  mkdirSync(home, { recursive: true });
+  if (!existsSync(marker)) {
+    const sessionId = `owner-qq-${owner}`;
+    // A retry after interrupted copying cannot overwrite newer session data.
+    cpSync(legacy, join(home, "sessions"), { recursive: true, force: false, errorOnExist: false });
+    writeFileSync(marker, JSON.stringify({ version: 1, sessionId, owner }));
+  }
+  const m = JSON.parse(readFileSync(marker, "utf8"));
+  return m.owner === owner && m.sessionId === `owner-qq-${owner}` ? m.sessionId : "owner-main";
+}
 
 export function ensureDirs() {
   for (const d of ["secrets", "logs", "runtime", "dsh", "workspace"]) mkdirSync(join(root, d), { recursive: true });
@@ -50,15 +76,15 @@ export function loadConfig() {
   try {
     if (existsSync(paths.config)) {
       const j = JSON.parse(readFileSync(paths.config, "utf8"));
-      return { ...CONFIG_DEFAULTS, ...j, model: { ...CONFIG_DEFAULTS.model, ...(j.model || {}) } };
+      return { ...CONFIG_DEFAULTS, ...j, qq_enabled: channelConfig.qqEnabled(j), model: { ...CONFIG_DEFAULTS.model, ...(j.model || {}) } };
     }
   } catch {
     /* fall back to defaults */
   }
-  return { ...CONFIG_DEFAULTS };
+  return { ...CONFIG_DEFAULTS, qq_enabled: false };
 }
 
-export const loadKey = () => readText(paths.key) || null;
+export const loadKey = () => { try { return modelConfig.read(root).key; } catch { return null; } };
 export const loadToken = () => readText(paths.token);
 export const isOutboundPaused = () => readText(paths.outboundPaused) === "1";
 

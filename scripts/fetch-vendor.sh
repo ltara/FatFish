@@ -112,7 +112,7 @@ url=${NODE_URL}
 sha256=${NODE_SHA}
 downloaded_at=${TS}
 extract_dir=vendor/node
-notes=Portable Node for running bridge + local-server on Windows
+notes=Portable Node fallback for running Core on Windows
 
 [dsh]
 version=${DSH_VERSION}

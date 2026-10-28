@@ -5,14 +5,18 @@
  * Results append to <SPIKE_HOME>/results.jsonl. Never prints the API key.
  */
 import http from "node:http";
-import https from "node:https";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, appendFileSync, existsSync, writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DshClient, assistantText } from "../../app/core/dsh-client.mjs";
+import { installProfile, engineEnv } from "../../app/core/engine-host.mjs";
+import { CORE_DIR } from "../../app/core/paths.mjs";
+import { PluginGateway } from "../../app/core/gateway.mjs";
+import { startModelProxy as startRecordingProxy } from "../../app/core/dev/model-proxy.mjs";
+import toolContract from "../../app/core/tool-contract.cjs";
 
 const scenario = process.argv[2] || "boot";
-const profile = process.argv[3] || "fatfish";
+const profile = process.argv[3] || (scenario === "approval" ? "fatfish-local" : "fatfish-external");
 const EXE = process.env.DSH_EXE;
 const HOME = process.env.SPIKE_HOME;
 const MODEL = process.env.SPIKE_MODEL || "deepseek-flash";
@@ -23,7 +27,7 @@ const WORK = join(HOME, "workspace");
 // Must sit outside both the workspace and %TEMP% (workspace-write grants temp).
 const OUTSIDE = process.env.SPIKE_OUTSIDE || join(process.env.USERPROFILE || HOME, "fatfish-spike-outside");
 mkdirSync(WORK, { recursive: true });
-mkdirSync(OUTSIDE, { recursive: true });
+if (scenario === "approval") mkdirSync(OUTSIDE, { recursive: true });
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 const record = (r) => {
   appendFileSync(join(HOME, "results.jsonl"), JSON.stringify({ scenario, profile, at: new Date().toISOString(), ...r }) + "\n");
@@ -44,36 +48,10 @@ function startOtlpSink() {
 }
 const STD_FIELDS = new Set(["model", "messages", "stream", "max_tokens", "temperature", "tools", "tool_choice",
   "thinking", "reasoning_effort", "stream_options", "top_p", "stop", "metadata", "system", "user", "response_format"]);
-function startModelProxy() {
-  return new Promise((res) => {
-    const s = http.createServer((req, r) => {
-      const chunks = [];
-      req.on("data", (c) => chunks.push(c));
-      req.on("end", () => {
-        const body = Buffer.concat(chunks);
-        if (req.method === "POST") {
-          probe.modelRequests++;
-          try {
-            const j = JSON.parse(body.toString("utf8"));
-            if ("dsh_session_log" in j) probe.sessionLogField++;
-            for (const k of Object.keys(j)) if (!STD_FIELDS.has(k)) probe.extraFields.add(k);
-          } catch {
-            /* non-json */
-          }
-        }
-        const headers = { ...req.headers, host: "api.deepseek.com" };
-        delete headers["content-length"];
-        headers["content-length"] = String(body.length);
-        const up = https.request({ host: "api.deepseek.com", path: req.url, method: req.method, headers }, (ur) => {
-          r.writeHead(ur.statusCode, ur.headers);
-          ur.pipe(r);
-        });
-        up.on("error", (e) => (r.writeHead(502), r.end(String(e.message))));
-        up.end(body);
-      });
-    });
-    s.listen(0, "127.0.0.1", () => res(s));
-  });
+let recordingProxy;
+async function startModelProxy() {
+  recordingProxy = await startRecordingProxy();
+  return recordingProxy;
 }
 function sampleRemotes(pid) {
   try {
@@ -99,38 +77,33 @@ function memMB(pid) {
 const approvals = [];
 let approvalAnswer = "rejected";
 // Core-side approval endpoint answered for the fatfish-approval plugin.
-function startApprovalServer(token) {
-  return new Promise((res) => {
-    const s = http.createServer((req, r) => {
-      let body = "";
-      req.on("data", (c) => (body += c));
-      req.on("end", () => {
-        if (req.headers.authorization !== `Bearer ${token}`) return r.writeHead(401).end();
-        const p = JSON.parse(body || "{}");
-        approvals.push(p);
-        log("APPROVAL(plugin)", JSON.stringify(p));
-        r.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ outcome: approvalAnswer }));
-      });
-    });
-    s.listen(0, "127.0.0.1", () => res(s));
-  });
+async function startApprovalServer() {
+  const gateway = new PluginGateway({ onApproval: async (p) => {
+    approvals.push(p);
+    log("APPROVAL(plugin)", "tool=" + p.toolName, "instance=" + p.instance);
+    return approvalAnswer;
+  } });
+  const token = gateway.register("local", () => true); // Isolated spike sessions only.
+  await gateway.start();
+  return { url: gateway.url, token };
 }
 
 async function boot({ useProxy = false, persona } = {}) {
-  const env = { ...process.env, DSH_HOME: HOME, TZ: "Asia/Shanghai" };
-  const approvalToken = Math.random().toString(36).slice(2) + Date.now().toString(36);
-  const approvalSrv = await startApprovalServer(approvalToken);
-  env.FATFISH_APPROVAL_URL = `http://127.0.0.1:${approvalSrv.address().port}/approval`;
-  env.FATFISH_APPROVAL_TOKEN = approvalToken;
+  const env = engineEnv({ DSH_HOME: HOME, TZ: "Asia/Shanghai", DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY });
+  const managed = ["fatfish-external", "fatfish-local"].includes(profile);
+  if (managed) installProfile(profile, HOME);
+  const approvalSrv = await startApprovalServer();
+  env.FATFISH_GATEWAY_URL = approvalSrv.url;
+  env.FATFISH_GATEWAY_TOKEN = approvalSrv.token;
   if (persona) env.FATFISH_PERSONA = persona;
   if (useProxy) {
     const sink = await startOtlpSink();
     const proxy = await startModelProxy();
     env.DSH_TELEMETRY_OTLP_URL = `http://127.0.0.1:${sink.address().port}/v1/logs`;
-    env.DEEPSEEK_BASE_URL = `http://127.0.0.1:${proxy.address().port}`;
+    env.DEEPSEEK_BASE_URL = proxy.url;
   }
   const c = new DshClient({
-    exe: EXE, profile, env, cwd: WORK, log,
+    exe: EXE, profile, args: managed ? ["--patch", join(CORE_DIR, "profiles", "common.patch.yml")] : [], env, cwd: WORK, log,
     onServerRequest: async (method, params) => {
       if (method === "approval/request") {
         approvals.push(params);
@@ -148,7 +121,6 @@ async function boot({ useProxy = false, persona } = {}) {
   const t0 = Date.now();
   const init = await c.request("initialize", {
     cwd: WORK, provider: "deepseek-official", model: MODEL,
-    approvalRequests: true, capabilities: { userQuestions: true },
   }, 60000).catch((e) => {
     log("init_failed", e.message, c.stderrTail.slice(-1500));
     throw e;
@@ -240,8 +212,19 @@ try {
     await new Promise((res) => setTimeout(res, 15000)); // OTel batch delay is 10s
     sampleRemotes(c.child.pid);
     clearInterval(timer);
+    probe.modelRequests = recordingProxy.requests.length;
+    for (const request of recordingProxy.requests) {
+      if ("dsh_session_log" in request) probe.sessionLogField++;
+      for (const key of Object.keys(request)) if (!STD_FIELDS.has(key)) probe.extraFields.add(key);
+    }
+    const expectedTools = profile === "fatfish-external" ? toolContract.externalToolsMatch : profile === "fatfish-local" ? toolContract.localToolsMatch : null;
+    const toolsMatch = expectedTools ? recordingProxy.requests.every(expectedTools) : null;
+    const toolNames = [...new Set(recordingProxy.requests.flatMap((r) => (r.tools || []).map((t) => t.name)))].sort();
+    const pass = toolsMatch !== false && probe.modelRequests >= 2 && probe.sessionLogField === 0 &&
+      !probe.extraFields.has("dsh_plugin_packages") && probe.otlpHits === 0 && probe.remotes.size === 0;
+    if (!pass) process.exitCode = 1;
     record({
-      modelRequests: probe.modelRequests, sessionLogField: probe.sessionLogField,
+      pass, toolsMatch, toolNames, modelRequests: probe.modelRequests, sessionLogField: probe.sessionLogField,
       extraFields: [...probe.extraFields], otlpHits: probe.otlpHits, remotes: [...probe.remotes],
     });
     await c.shutdown();
@@ -250,4 +233,4 @@ try {
   record({ error: String(e.message || e) });
   process.exitCode = 1;
 }
-process.exit();
+process.exit(process.exitCode || 0);

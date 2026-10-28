@@ -6,8 +6,23 @@
   "main": "server.mjs",
   "scripts": {
     "start": "node server.mjs",
-    "check": "node --check server.mjs && node --check engine-host.mjs && node --check router.mjs && node --check dsh-client.mjs && node --check paths.mjs && node --check channels/qq.mjs && node --check profile/fatfish-approval.mjs",
-    "e2e": "node dev/e2e.mjs"
+    "check": "node --check server.mjs && node --check engine-host.mjs && node --check instance-manager.mjs && node --check gateway.mjs && node --check router.mjs && node --check dsh-client.mjs && node --check paths.mjs && node --check channels/qq.mjs && node --check profiles/plugins/fatfish-approval.mjs && node --check dev/e2e.mjs && node --check dev/contracts.mjs && node --check dev/model-proxy.mjs && node --check identity.mjs && node --check dev/identity-check.mjs && node --check dev/cleanup-check.mjs && node --check turn-errors.mjs && node --check dev/error-check.mjs && node --check channel-config.cjs && node --check dev/optional-channel-check.mjs && node --check memory-store.mjs && node --check memory-service.mjs && node --check tool-contract.cjs && node --check profiles/plugins/gateway-client.mjs && node --check profiles/plugins/fatfish-memory.mjs && node --check dev/memory-check.mjs && node --check reminder-time.mjs && node --check reminder-store.mjs && node --check reminder-service.mjs && node --check reminder-dispatch.mjs && node --check profiles/plugins/fatfish-remind.mjs && node --check dev/reminder-check.mjs && node --check dev/reminder-runtime-check.mjs && node --check dev/channel-lifecycle-check.mjs && node --check dev/inbox-runtime-check.mjs && node --check workspace-config.cjs && node --check dev/workspace-check.mjs && node --check model-config.cjs && node --check model-service.mjs && node --check dev/compat-proxy.mjs && node --check dev/model-check.mjs && node --check license-trust.cjs && node --check device-fingerprint.cjs && node --check license-gate.cjs && node --check dev/license-fixture.cjs && node --check dev/license-check.mjs",
+    "e2e": "node dev/e2e.mjs",
+    "contracts": "node dev/contracts.mjs",
+    "identity-check": "node dev/identity-check.mjs",
+    "cleanup-check": "node dev/cleanup-check.mjs",
+    "error-check": "node dev/error-check.mjs",
+    "optional-channel-check": "node dev/optional-channel-check.mjs",
+    "memory-check": "node dev/memory-check.mjs",
+    "reminder-check": "node dev/reminder-check.mjs",
+    "reminder-runtime-check": "node dev/reminder-runtime-check.mjs",
+    "channel-lifecycle-check": "node dev/channel-lifecycle-check.mjs",
+    "inbox-runtime-check": "node dev/inbox-runtime-check.mjs",
+    "workspace-check": "node dev/workspace-check.mjs",
+    "computer-capability-check": "node ../../spikes/m4-computer-use/probe.mjs",
+    "model-check": "node dev/model-check.mjs",
+    "model-protocol-check": "node ../../spikes/m4-models/probe.mjs",
+    "license-check": "node dev/license-check.mjs"
   },
   "dependencies": {
     "ws": "8.22.0"

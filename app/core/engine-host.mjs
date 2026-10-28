@@ -1,231 +1,251 @@
-/**
- * EngineHost — owns the DSH runtime process for Core.
- * - installs the fatfish profile into $DSH_HOME/profiles/fatfish on every start
- * - spawns the pinned runtime (stdio JSON-RPC), initializes the model route
- * - serializes turns, resumes persisted sessions on first use after a (re)start
- * - restarts on crash (backoff) and when key / persona / model change (sdk profile has no HMR)
- * - answers the fatfish-approval plugin over loopback HTTP, delegating to `onApproval`
- * Never logs message text or keys.
- */
+/** One isolated DSH process. Core owns routing and the gateway; DSH owns permissions. */
 import { EventEmitter } from "node:events";
-import { copyFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
-import { join } from "node:path";
-import { randomBytes } from "node:crypto";
-import http from "node:http";
+import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync, lstatSync, renameSync, unlinkSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { join, resolve, sep } from "node:path";
 import { DshClient, assistantText } from "./dsh-client.mjs";
-import { CORE_DIR, paths, loadConfig, loadKey, loadPersona, log, redact } from "./paths.mjs";
+import { classifyTurnFailure } from "./turn-errors.mjs";
+import { CORE_DIR, paths, loadPersona, log } from "./paths.mjs";
+import workspaceConfig from "./workspace-config.cjs";
+import modelConfig from "./model-config.cjs";
+import licenseModule from "./license-gate.cjs";
 
-const PROFILE = "fatfish";
 const EXE_NAME = "deepseek-harness-sdk-runtime-win-x64.exe";
 const TURN_TIMEOUT_MS = 180000;
-const APPROVAL_TIMEOUT_MS = 120000;
-const OUTCOMES = new Set(["allowed-once", "rejected", "cancelled"]);
 
 export function resolveDshExe() {
   if (process.env.FATFISH_DSH_EXE) return process.env.FATFISH_DSH_EXE;
-  const candidates = [
-    join(CORE_DIR, "..", "..", "vendor", "dsh", EXE_NAME), // dev: <repo>/app/core
-    join(CORE_DIR, "..", "vendor", "dsh", EXE_NAME), // packaged: <resources>/core
-  ];
-  return candidates.find((p) => existsSync(p)) || null;
+  return [join(CORE_DIR, "..", "..", "vendor", "dsh", EXE_NAME),
+    join(CORE_DIR, "..", "vendor", "dsh", EXE_NAME)].find((p) => existsSync(p)) || null;
 }
 
-function installProfile() {
-  const src = join(CORE_DIR, "profile");
-  const dst = join(paths.dshHome, "profiles", PROFILE);
+export function installProfile(profile, dshHome) {
+  if (!["fatfish-external", "fatfish-local"].includes(profile)) throw new Error("unknown_profile");
+  const base = resolve(dshHome, "profiles");
+  const dst = resolve(base, profile);
+  // Only replace our exact managed profile, never the home, sessions or user directories.
+  if (!dst.startsWith(base + sep) || dst !== join(base, profile)) throw new Error("unsafe_profile_path");
+  rmSync(dst, { recursive: true, force: true });
   mkdirSync(dst, { recursive: true });
-  for (const f of readdirSync(src)) copyFileSync(join(src, f), join(dst, f));
+  cpSync(join(CORE_DIR, "profiles", profile), dst, { recursive: true });
+  cpSync(join(CORE_DIR, "profiles", "plugins"), join(dst, "plugins"), { recursive: true });
 }
 
-/** Child env: drop inherited DSH_* / DEEPSEEK_* (e.g. a user-set DSH_PERMISSION_MODE) before adding ours. */
-function engineEnv(extra) {
-  const env = {};
-  for (const [k, v] of Object.entries(process.env)) {
-    if (/^(DSH_|DEEPSEEK_|FATFISH_)/i.test(k)) continue;
-    env[k] = v;
-  }
-  // Dev-only redirect (e.g. a recording proxy); never set in production.
+/** Do not inherit permission overrides, host skill paths or another instance's credentials. */
+export function engineEnv(extra) {
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(DSH_|DEEPSEEK_|FATFISH_)/i.test(k)));
   if (process.env.FATFISH_DEV_DEEPSEEK_BASE_URL) env.DEEPSEEK_BASE_URL = process.env.FATFISH_DEV_DEEPSEEK_BASE_URL;
   return { ...env, ...extra };
 }
 
+const SUFFIX = {
+  external: "你正在通过聊天渠道和主人说话。请用纯文本，不用标题、列表符号和代码块。你无法操作电脑；主人需要操作电脑时，请让他回到电脑前的肥鱼窗口。你和主人的对话连续保存，程序重启后依然在，不要说自己会忘记。主人明确要求长期记住时使用 memory_save，可能用得上以前事实时先 memory_search；范围由核心决定，公开资料只能读。主人设提醒时用 remind_create，查提醒用 remind_list，取消用 remind_delete；工具失败时不能声称已经设置成功。",
+  local: "你正在肥鱼窗口里和主人对话。涉及电脑操作时遵守权限与审批结果。长期记忆请用 memory_save，以前的事实先 memory_search，不要自行创建记忆文件。工具被拒绝、超时或失败时不得声称已执行成功。对话连续保存，程序重启后依然在；删除记忆会从新的模型会话继续。主人设提醒时用 remind_create，查提醒用 remind_list，取消用 remind_delete，不要自行启动后台脚本来计时。",
+};
+
 export class EngineHost extends EventEmitter {
-  constructor({ onApproval } = {}) {
+  constructor({ name, profile, dshHome, workspace, extraPatches = [], gatewayEnv = {} }) {
     super();
-    this.onApproval = onApproval || (async () => "rejected");
-    this.state = "stopped"; // stopped | starting | ready | no_key | missing_runtime | crashed
+    if (!SUFFIX[name]) throw new Error("unknown_instance");
+    Object.assign(this, { name, profile, dshHome, workspace, extraPatches, gatewayEnv });
+    this.state = "stopped";
     this.client = null;
     this.startedWith = null;
     this.opened = new Set();
     this.queue = Promise.resolve();
     this.restartDelay = 2000;
     this.stopping = false;
-    this.approvalToken = randomBytes(24).toString("hex");
+    this.disposed = false;
+    this.activeSessionId = null;
+    this.activeContext = null;
+    this.crashTimes = [];
+    this.cancelEpoch = 0;
   }
 
   #setState(state, extra = {}) {
     this.state = state;
-    this.emit("state", { state, ...extra });
-  }
-
-  async #startApprovalServer() {
-    if (this.approvalServer) return;
-    this.approvalServer = http.createServer((req, res) => {
-      if (req.method !== "POST" || req.headers.authorization !== `Bearer ${this.approvalToken}`) {
-        res.writeHead(401).end();
-        return;
-      }
-      let body = "";
-      req.setEncoding("utf8");
-      req.on("data", (c) => (body += c));
-      req.on("end", async () => {
-        let outcome = "rejected";
-        try {
-          const p = JSON.parse(body || "{}");
-          log("approval_request", "tool=" + p.toolName, "session=" + p.sessionId);
-          const answer = await Promise.race([
-            this.onApproval(p),
-            new Promise((r) => setTimeout(() => r("rejected"), APPROVAL_TIMEOUT_MS)),
-          ]);
-          if (OUTCOMES.has(answer)) outcome = answer;
-        } catch {
-          /* fail closed */
-        }
-        log("approval_answer", outcome);
-        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ outcome }));
-      });
-    });
-    await new Promise((r) => this.approvalServer.listen(0, "127.0.0.1", r));
+    this.emit("state", { instance: this.name, state, crashCount: this.crashTimes.length, ...extra });
   }
 
   #wanted() {
-    const cfg = loadConfig();
-    return { key: loadKey(), persona: loadPersona(), provider: cfg.model.provider, model: cfg.model.model };
+    const license = new licenseModule.LicenseGate(paths.root).inspect();
+    if (!license.valid) return { licenseError: license.error };
+    let model, modelError = false;
+    try { model = modelConfig.read(paths.root); } catch { modelError = true; }
+    let workspace = this.workspace, workspaceError = false;
+    if (this.name === "local") { try { workspace = workspaceConfig.forEngine(paths.root).path; } catch { workspaceError = true; } }
+    return { licenseError: license.valid ? null : license.error, key: model?.key, persona: loadPersona(), provider: model?.route.provider, model: model?.route.model, modelState: model,
+      modelIdentity: model ? JSON.stringify([model.route, model.generation]) : null, modelError, workspace, workspaceError };
   }
 
-  async start() {
+  start() {
+    if (this.disposed) return Promise.resolve(false);
+    if (this.starting) return this.starting;
+    if (this.client && this.state === "ready") return Promise.resolve(true);
+    this.starting = this.#start().finally(() => { this.starting = null; });
+    return this.starting;
+  }
+
+  async #start() {
     this.stopping = false;
     const want = this.#wanted();
-    if (!want.key) {
-      this.#setState("no_key");
-      return false;
-    }
+    if (want.licenseError) { this.#setState("activation_required", { error: want.licenseError }); return false; }
+    if (want.modelError) { this.#setState("model_config_invalid", { error: "model_config_invalid" }); return false; }
+    if (!want.key) { this.#setState("no_key"); return false; }
+    if (want.workspaceError) { this.#setState("workspace_unavailable", { error: "workspace_unavailable" }); return false; }
     const exe = resolveDshExe();
-    if (!exe) {
-      this.#setState("missing_runtime");
-      return false;
-    }
+    if (!exe) { this.#setState("missing_runtime"); return false; }
     this.#setState("starting");
-    installProfile();
-    await this.#startApprovalServer();
-
+    this.workspace = want.workspace;
+    if (this.name !== "local") mkdirSync(this.workspace, { recursive: true });
+    installProfile(this.profile, this.dshHome);
+    const selected = modelConfig.runtime(want.modelState), modelPatch = join(this.dshHome, "model.patch.json");
+    const tempPatch = modelPatch + "." + randomUUID() + ".tmp";
+    try {
+      if (existsSync(modelPatch) && (lstatSync(modelPatch).isSymbolicLink() || !lstatSync(modelPatch).isFile())) throw new Error("model_patch_invalid");
+      writeFileSync(tempPatch, JSON.stringify(selected.patch) + "\n", { mode: 0o600, flag: "wx" }); renameSync(tempPatch, modelPatch);
+    } catch { this.#setState("model_config_invalid", { error: "model_patch_invalid" }); return false; }
+    finally { try { unlinkSync(tempPatch); } catch { /* only our generated metadata temp */ } }
     const client = new DshClient({
-      exe,
-      profile: PROFILE,
-      cwd: paths.workspace,
-      env: engineEnv({
-        DSH_HOME: paths.dshHome,
-        DEEPSEEK_API_KEY: want.key,
-        TZ: "Asia/Shanghai",
-        FATFISH_PERSONA: want.persona,
-        FATFISH_APPROVAL_URL: `http://127.0.0.1:${this.approvalServer.address().port}/approval`,
-        FATFISH_APPROVAL_TOKEN: this.approvalToken,
-        FATFISH_APPROVAL_TIMEOUT_MS: String(APPROVAL_TIMEOUT_MS),
-      }),
+      exe, profile: this.profile, args: [...this.extraPatches.flatMap((p) => ["--patch", resolve(p)]), "--patch", modelPatch], cwd: this.workspace,
+      env: engineEnv({ DSH_HOME: this.dshHome, ...selected.env, TZ: "Asia/Shanghai",
+        FATFISH_PERSONA: want.persona, FATFISH_PERSONA_SUFFIX: SUFFIX[this.name], ...this.gatewayEnv }),
     });
     client.start();
     this.client = client;
     this.opened = new Set();
+    client.onNotification((method, p) => {
+      if (method === "session.event") this.emit("event", { instance: this.name,
+        sessionId: p.sessionId === this.activeSessionId ? this.activeContext?.logicalSessionId || p.sessionId : p.sessionId, event: p.event });
+    });
     client.exited.then(({ code, sig }) => this.#onExit(client, code, sig));
-
     const t0 = Date.now();
     try {
-      await client.request("initialize", { cwd: paths.workspace, provider: want.provider, model: want.model }, 60000);
-    } catch (e) {
-      log("engine_init_failed", redact(e.message), redact(client.stderrTail.slice(-600)));
+      await client.request("initialize", { cwd: this.workspace, provider: selected.provider, model: selected.model }, 60000);
+      if (this.stopping || this.disposed || this.client !== client) return false;
+    } catch {
+      // Never persist raw stderr or model errors: they may contain message text or credentials.
+      log("engine_init_failed", "instance=" + this.name, "stderr_chars=" + client.stderrTail.length);
+      if (this.client === client) this.client = null;
       await client.shutdown();
-      this.#setState("crashed", { error: "init_failed" });
+      if (!this.stopping && !this.disposed) this.#setState("crashed", { error: "init_failed" });
       return false;
     }
     this.startedWith = want;
-    this.restartDelay = 2000;
-    log("engine_ready", "pid=" + client.child.pid, "init_ms=" + (Date.now() - t0), "model=" + want.model);
-    this.#setState("ready");
+    if (!this.crashTimes.length) this.restartDelay = 2000;
+    log("engine_ready", "instance=" + this.name, "pid=" + client.child.pid, "init_ms=" + (Date.now() - t0));
+    this.#setState("ready", { pid: client.child.pid });
+    if (this.crashTimes.length) {
+      this.stableTimer = setTimeout(() => {
+        if (this.client !== client || this.state !== "ready") return;
+        this.crashTimes = [];
+        this.restartDelay = 2000;
+        this.#setState("ready", { pid: client.child.pid });
+      }, 60000);
+      this.stableTimer.unref?.();
+    }
     return true;
   }
 
   #onExit(client, code, sig) {
     if (client !== this.client) return;
     this.client = null;
-    if (this.stopping) return;
-    log("engine_exit", "code=" + code, "sig=" + sig, redact(client.stderrTail.slice(-400)));
-    this.#setState("crashed", { error: "exited" });
+    if (this.stopping || this.disposed) return;
+    log("engine_exit", "instance=" + this.name, "code=" + code, "sig=" + sig);
+    this.crashTimes = this.crashTimes.filter((at) => at > Date.now() - 60000);
+    this.crashTimes.push(Date.now());
+    this.#setState("crashed", { error: "engine_crashed" });
     const delay = this.restartDelay;
     this.restartDelay = Math.min(this.restartDelay * 2, 30000);
-    setTimeout(() => {
-      if (!this.client && !this.stopping) this.start().catch((e) => log("engine_restart_error", redact(e.message)));
+    clearTimeout(this.restartTimer);
+    clearTimeout(this.stableTimer);
+    this.restartTimer = setTimeout(() => {
+      if (!this.client && !this.stopping && !this.disposed) this.start().catch(() => this.#setState("crashed", { error: "restart_failed" }));
     }, delay);
   }
 
   async stop() {
     this.stopping = true;
+    clearTimeout(this.restartTimer);
+    clearTimeout(this.stableTimer);
     const c = this.client;
     this.client = null;
     if (c) await c.shutdown();
+    if (this.starting) await this.starting;
     this.#setState("stopped");
   }
 
-  /** Restart if key / persona / model changed since this runtime started (config is startup-only). */
+  async dispose() { this.disposed = true; await this.stop(); }
+
+  async cancel() { this.cancelEpoch++; await this.stop(); }
+
   async #ensureFresh() {
+    if (this.disposed) return false;
+    if (this.starting) await this.starting;
+    if (this.disposed) return false;
     const want = this.#wanted();
+    if (want.licenseError) { await this.stop(); this.#setState("activation_required", { error: want.licenseError }); return false; }
+    if (want.modelError) { await this.stop(); this.#setState("model_config_invalid", { error: "model_config_invalid" }); return false; }
+    if (want.workspaceError) { await this.stop(); this.#setState("workspace_unavailable", { error: "workspace_unavailable" }); return false; }
     const w = this.startedWith;
     const stale = !this.client || !w || w.key !== want.key || w.persona !== want.persona ||
-      w.provider !== want.provider || w.model !== want.model;
+      w.modelIdentity !== want.modelIdentity || w.workspace !== want.workspace;
     if (!stale) return this.state === "ready";
-    if (this.client) {
-      log("engine_reload", "reason=config_changed");
-      await this.stop();
-    }
+    if (this.client || this.starting) await this.stop();
     return this.start();
   }
 
-  async #ensureSession(sessionId) {
-    if (this.opened.has(sessionId)) return;
-    try {
-      await this.client.request("session/resume", { sessionId }, 30000);
-      log("session_resumed", sessionId);
-    } catch {
-      // Unknown id: the first session/prompt creates it.
-    }
-    this.opened.add(sessionId);
-  }
-
-  /**
-   * Run one turn. Resolves { ok: true, text } with the final assistant text,
-   * or { ok: false, error } where error ∈ no_key | missing_runtime | engine_unavailable | turn_timeout | engine_exited | turn_failed.
-   */
-  turn(sessionId, text) {
-    const run = async () => {
-      if (!(await this.#ensureFresh())) {
-        return { ok: false, error: ["no_key", "missing_runtime"].includes(this.state) ? this.state : "engine_unavailable" };
-      }
-      await this.#ensureSession(sessionId);
-      const t0 = Date.now();
-      try {
-        const r = await this.client.prompt(sessionId, text, TURN_TIMEOUT_MS);
-        const final = r.texts.length ? r.texts[r.texts.length - 1] : "";
-        const kind = r.endReason?.kind || "unknown";
-        log("turn_end", "session=" + sessionId, "kind=" + kind, "ms=" + (Date.now() - t0), "chars=" + final.length);
-        if (!final) return { ok: false, error: "turn_failed", detail: kind };
-        return { ok: true, text: final };
-      } catch (e) {
-        log("turn_error", "session=" + sessionId, redact(e.message));
-        return { ok: false, error: e.message === "turn_timeout" || e.message === "engine_exited" ? e.message : "turn_failed" };
-      }
-    };
+  #enqueue(run) {
     const p = this.queue.then(run, run);
     this.queue = p.catch(() => {});
     return p;
+  }
+
+  reload() { return this.#enqueue(() => this.#ensureFresh()); }
+
+  turn(sessionId, text, context = {}) {
+    const epoch = this.cancelEpoch;
+    return this.#enqueue(async () => {
+      if (epoch !== this.cancelEpoch) return { ok: false, error: "cancelled" };
+      const fresh = await this.#ensureFresh();
+      if (epoch !== this.cancelEpoch) return { ok: false, error: "cancelled" };
+      if (!fresh) return { ok: false, error: ["no_key", "missing_runtime", "workspace_unavailable", "model_config_invalid"].includes(this.state) ? this.state : "engine_unavailable" };
+      const client = this.client;
+      if (!this.opened.has(sessionId)) {
+        try { await client.request("session/resume", { sessionId }, 30000); }
+        catch { /* first prompt creates an unknown session */ }
+        this.opened.add(sessionId);
+      }
+      this.activeSessionId = sessionId;
+      this.activeContext = context;
+      const t0 = Date.now();
+      let result;
+      let toolCalls = 0;
+      // Ignore stale stderr from an earlier turn when considering transport fallback.
+      client.stderrTail = "";
+      try {
+        const r = await client.prompt(sessionId, text, TURN_TIMEOUT_MS);
+        const final = r.texts.at(-1) || "";
+        toolCalls = r.events.filter((e) => e.type === "tool/call").length;
+        result = final && r.endReason?.kind === "completed" ? { ok: true, text: final } :
+          { ok: false, error: classifyTurnFailure({ ...r, stderr: client.stderrTail }) };
+      } catch (e) {
+        if (e.message === "turn_timeout") await this.stop();
+        result = { ok: false, error: classifyTurnFailure({ exception: e, stderr: client.stderrTail }) };
+      } finally {
+        this.activeSessionId = null;
+        this.activeContext = null;
+      }
+      if (epoch !== this.cancelEpoch) result = { ok: false, error: "cancelled" };
+      log("turn_end", "instance=" + this.name, "ok=" + result.ok, "error=" + (result.error || "none"), "kind=" + (result.detail || "none"), "tool_calls=" + toolCalls, "ms=" + (Date.now() - t0));
+      if (result.ok && this.crashTimes.length) {
+        this.crashTimes = [];
+        this.restartDelay = 2000;
+        this.#setState("ready", { pid: client.child.pid });
+      }
+      this.emit("turn_end", { instance: this.name, sessionId: context.logicalSessionId || sessionId, ok: result.ok, error: result.error, toolCalls });
+      return result;
+    });
   }
 }
 

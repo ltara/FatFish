@@ -1,64 +1,40 @@
-﻿# Diagnostics (user-facing labels only)
+﻿# Read-only diagnostics. NoPause is useful for automated validation.
+param([switch]$NoPause)
 $ErrorActionPreference = "Continue"
 $AppData = if ($env:FATFISH_APPDATA) { $env:FATFISH_APPDATA } else { Join-Path $env:APPDATA "FatFish" }
-$keyPath = Join-Path $AppData "secrets\deepseek_api_key"
-$configPath = Join-Path $AppData "config.json"
 $Runtime = Join-Path $AppData "runtime"
-
 Write-Host "=== 肥鱼诊断 ==="
-
-$qqHints = @(
-  "$env:ProgramFiles\Tencent\QQNT\QQ.exe",
-  "${env:ProgramFiles(x86)}\Tencent\QQ\QQ.exe",
-  "$env:ProgramFiles\Tencent\QQ\QQ.exe"
-)
-$qq = $qqHints | Where-Object { Test-Path $_ } | Select-Object -First 1
-if ($qq) { Write-Host "[OK] 已检测到 QQ: $qq" } else { Write-Host "[!!] 未检测到 QQ，请先安装官方 QQ" }
-
-if ((Test-Path $keyPath) -and (Get-Content $keyPath -Raw).Trim()) {
-  Write-Host "[OK] 已保存 API Key（内容不显示）"
-} else {
-  Write-Host "[!!] 未填写 API Key — 打开设置粘贴后保存"
-}
-
-$port = 3001
-$settingsPort = 8787
-$loginPort = 6099
-if (Test-Path $configPath) {
+$key = Join-Path $AppData "secrets\deepseek_api_key"
+if ((Test-Path -LiteralPath $key) -and (Get-Content -LiteralPath $key -Raw).Trim()) { Write-Host "[OK] 模型密钥已保存（内容不显示）" }
+else { Write-Host "[!!] 尚未保存模型密钥，请到肥鱼窗口的设置里填写。" }
+$port = 3001; $login = 6099
+$configPath = Join-Path $AppData "config.json"
+if (Test-Path -LiteralPath $configPath) {
   try {
-    $cfg = Get-Content $configPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $cfg = Get-Content -LiteralPath $configPath -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($cfg.onebot_port) { $port = [int]$cfg.onebot_port }
-    if ($cfg.settings_port) { $settingsPort = [int]$cfg.settings_port }
-    if ($cfg.login_ui_port) { $loginPort = [int]$cfg.login_ui_port }
-  } catch {}
+    if ($cfg.login_ui_port) { $login = [int]$cfg.login_ui_port }
+    $owners = @($cfg.owners).Count
+    Write-Host "[OK] 已读取绑定表，共 $owners 个账号（账号不显示）。"
+  } catch { Write-Host "[!!] 配置无法读取。" }
 }
-
-function Test-Port([int]$P) {
+function Test-Port([int]$Port) {
+  $client = New-Object System.Net.Sockets.TcpClient
   try {
-    $c = New-Object System.Net.Sockets.TcpClient
-    $iar = $c.BeginConnect("127.0.0.1", $P, $null, $null)
-    $ok = $iar.AsyncWaitHandle.WaitOne(600, $false)
-    if ($ok) { $c.EndConnect($iar); $c.Close(); return $true }
-    $c.Close(); return $false
-  } catch { return $false }
+    $pending = $client.BeginConnect("127.0.0.1", $Port, $null, $null)
+    if (-not $pending.AsyncWaitHandle.WaitOne(600, $false)) { return $false }
+    $client.EndConnect($pending); return $true
+  } catch { return $false } finally { $client.Close() }
 }
-
-if (Test-Port $port) { Write-Host "[OK] 本地服务端口 $port 可连接" } else { Write-Host "[!!] 本地服务端口 $port 未监听 — 请先启动并完成登录" }
-if (Test-Port $settingsPort) { Write-Host "[OK] 设置页端口 $settingsPort 可连接" } else { Write-Host "[!!] 设置页端口 $settingsPort 未监听" }
-if (Test-Port $loginPort) { Write-Host "[OK] 登录窗口端口 $loginPort 可连接" } else { Write-Host "[..] 登录窗口端口 $loginPort 未监听（登录前可能正常）" }
-
-foreach ($n in @("bridge.pid","local-server.pid","napcat.pid")) {
-  $f = Join-Path $Runtime $n
-  if (Test-Path $f) {
-    $id = (Get-Content $f -Raw).Trim()
-    $alive = $false
-    try { Get-Process -Id ([int]$id) -ErrorAction Stop | Out-Null; $alive = $true } catch {}
-    if ($alive) { Write-Host "[OK] 进程 $n = $id 运行中" } else { Write-Host "[!!] 进程 $n = $id 不存在" }
-  } else {
-    Write-Host "[..] 无 PID 文件 $n"
-  }
+foreach ($entry in @(@{name="消息渠道";port=$port}, @{name="登录窗口";port=$login})) {
+  if (Test-Port $entry.port) { Write-Host "[OK] $($entry.name)端口可连接。" } else { Write-Host "[..] $($entry.name)尚未监听。" }
 }
-
-Write-Host "数据目录: $AppData"
+foreach ($name in @("core.pid", "napcat.pid")) {
+  $file = Join-Path $Runtime $name
+  $idText = if (Test-Path -LiteralPath $file) { (Get-Content -LiteralPath $file -Raw).Trim() } else { "" }
+  if ($idText -match '^\d+$' -and (Get-Process -Id ([int]$idText) -ErrorAction SilentlyContinue)) { Write-Host "[OK] $name 进程存在，PID=$idText。" }
+  else { Write-Host "[..] 未发现 $name 对应进程。" }
+}
+Write-Host "数据目录：$AppData"
 Write-Host "=== 结束 ==="
-pause
+if (-not $NoPause) { Read-Host "按回车结束" | Out-Null }

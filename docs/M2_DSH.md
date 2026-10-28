@@ -7,7 +7,7 @@
 - Windows 10/11 x64（Git Bash），系统 Node 22（仅用于运行测试脚本，DSH 不依赖它）
 - DSH：PyPI `deepseek-harness-runtime-bin==0.2.1rc2` 的 `win_amd64` wheel，SHA256 `d38c18f5…1cb7`；exe 自报版本 `0.2.1-rc.2`
 - 模型：`deepseek-official` / `deepseek-flash`，使用真实 Key
-- `DSH_HOME` 为隔离的临时目录，profile 为自有的 `fatfish`（验证时在 `spikes/m2-dsh/profile/`，M3 已迁到 `app/core/profile/`）
+- `DSH_HOME` 为隔离的临时目录，M2 当时的 profile 为自有的 `fatfish`。M3-A 现已拆为 `app/core/profiles/fatfish-external|fatfish-local/` 和 `common.patch.yml`，下方复现命令已同步。
 
 ## 结论速览
 
@@ -24,7 +24,7 @@
 
 master 文档里写的 `initialize.approvalRequests: true` → 服务端发出 `approval/request` 请求，**在 rc2 里并不存在**（exe 中没有 `approvalRequests` 字符串，`user-question/ask` 同样不存在）。在 rc2 里，`approval/request` 只是**运行时内部的 Cordis waterfall 事件**；没有应答者时，默认结果是 `unavailable`，也就是按拒绝处理（fail-closed）。
 
-做法：`profile/fatfish-approval.mjs` 是一个约 60 行的 Cordis 插件，通过 patch 的 `insert` 挂载。它监听 `approval/request`，经 `127.0.0.1` 回环 HTTP（带 Bearer token）询问 Core，再把 Core 返回的 `allowed-once` / `rejected` / `cancelled` 交回 DSH。任何异常、超时或拿不到 Core，一律返回 `rejected`。
+做法：`app/core/profiles/plugins/fatfish-approval.mjs` 是一个约 60 行的 Cordis 插件，只在 local 通过 patch 的 `insert` 挂载。它监听 `approval/request`，经 `127.0.0.1` 回环 HTTP（带实例独立 Bearer token）询问 Core gateway，再把返回的 `allowed-once` / `rejected` / `cancelled` 交回 DSH。任何异常、超时或拿不到 Core，一律返回 `rejected`。
 
 - **权限判断仍然 100% 由 DSH 做出**：沙箱拦下越界写入后，模型申请提权，DSH 才发起审批。插件只负责回答。
 - 请求里带有 `sessionId`、`toolName`、`callId`、`reason`，以及 **`displayReason.zh`**，例如「允许本次操作使用 danger-full-access 权限：该文件位于会话工作区之外……」。这段文字可以直接用作审批弹窗正文，§11-4 的疑问得到解答。
@@ -88,9 +88,22 @@ schedule → sessionController → fileUploads → connection（web 客户端连
 ./scripts/fetch-vendor.sh                       # 现已包含 DSH（固定 SHA256，校验失败则退出）
 export DSH_EXE="$(cygpath -w vendor/dsh/deepseek-harness-sdk-runtime-win-x64.exe)"
 export SPIKE_HOME="$(cygpath -w /tmp/dsh-spike-home)" DEEPSEEK_API_KEY=…
-mkdir -p /tmp/dsh-spike-home/profiles/fatfish && cp app/core/profile/* /tmp/dsh-spike-home/profiles/fatfish/
 cd spikes/m2-dsh
-node pending.mjs                                # 期望输出 all entries active
-node run.mjs boot|persona|memory|resume|privacy
-node run.mjs approval fatfish reject|allow      # 会在 %USERPROFILE%\fatfish-spike-outside 写入或清理探针文件
+node run.mjs boot fatfish-external              # 自动安装 profile + common overlay
+node pending.mjs fatfish-external <common.patch.yml绝对路径> # 期望 all entries active
+node run.mjs privacy fatfish-external
+node run.mjs privacy fatfish-local              # 使用另一个 SPIKE_HOME
+node run.mjs persona|memory|resume fatfish-external
+node run.mjs approval fatfish-local reject|allow # 会在 %USERPROFILE%\fatfish-spike-outside 写入探针
 ```
+
+## 7. M3-A 回归（2026-10-25）
+
+- `--profile <name> --patch <绝对路径> --dump-config` 生效，两个 profile 均无 pending。external 关闭 shell 后，依赖 shell 的 `permission` 行也须关闭，沙箱仍固定 read-only。
+- 对外真实模型请求的工具白名单为空；local 仍有工具，越界写入通过统一网关触发审批，拒绝不落盘。详见 HANDOFF §4。
+- 两实例各跑一次 privacy（各 2 次真实模型请求）：会话日志字段 0、插件清单字段 0、OTLP 0、额外出站连接 0。
+- 录制代理已修正：rc2 官方基址为 `https://api.deepseek.com/anthropic`，须保留 `/anthropic` 前缀，且响应协议为 Messages SSE。
+
+## 8. M4-8 后续：界面操作能力（2026-10-25）
+
+锁定的 Windows SDK `0.2.1-rc.2` 在独立临时 profile 中无法 import 官方 `dsh-computer-use`、native 与 MCP 提供者，均为 `ERR_MODULE_NOT_FOUND`；初始化/文本回复仍成功，实际请求仍是原 21 项 local 工具，没有界面操作工具。13 项探测连续三轮通过，只验证组合与工具目录，没有截图或真实桌面输入。按 ROADMAP 的失败分支，v1 不启用，v1.x 再做可交付 Windows 提供者与审批闭环；没有升级运行时或改生产 profile。细节、被测哈希与证据见 `M4_COMPUTER_USE.md`。这不代替尚未完成的干净 Win10/PowerShell 5.1 验证。

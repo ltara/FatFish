@@ -6,9 +6,10 @@
 import { spawn } from "node:child_process";
 
 export class DshClient {
-  constructor({ exe, profile, env, cwd, onServerRequest, log }) {
+  constructor({ exe, profile, args = [], env, cwd, onServerRequest, log }) {
     this.exe = exe;
     this.profile = profile;
+    this.args = [...args];
     this.env = env;
     this.cwd = cwd;
     this.onServerRequest = onServerRequest || (async () => { throw new Error("no_handler"); });
@@ -21,7 +22,7 @@ export class DshClient {
 
   start() {
     this.startedAt = Date.now();
-    this.child = spawn(this.exe, ["--profile", this.profile], {
+    this.child = spawn(this.exe, ["--profile", this.profile, ...this.args], {
       cwd: this.cwd,
       env: this.env,
       windowsHide: true,
@@ -43,12 +44,18 @@ export class DshClient {
       this.stderrTail = (this.stderrTail + s).slice(-8000);
     });
     this.exited = new Promise((resolve) => {
-      this.child.on("exit", (code, sig) => {
+      let finished = false;
+      const finish = (code, sig) => {
+        if (finished) return;
+        finished = true;
         for (const p of this.pending.values()) p.reject(new Error(`dsh_exit_${code}_${sig}`));
         this.pending.clear();
         resolve({ code, sig });
-      });
+      };
+      this.child.on("exit", finish);
+      this.child.on("error", () => finish(null, "spawn_error"));
     });
+    this.child.stdin.on("error", () => {}); // Exit/error settles outstanding RPCs.
   }
 
   #send(obj) {
@@ -133,8 +140,9 @@ export class DshClient {
         }
       });
     });
-    await this.request("session/prompt", { sessionId, contentBlocks: [{ type: "text", text }] });
-    await done;
+    // Attach both rejection handlers immediately; a prompt RPC error must not leave
+    // the turn waiter as an unhandled rejection when the process later exits.
+    await Promise.all([this.request("session/prompt", { sessionId, contentBlocks: [{ type: "text", text }] }), done]);
     return { texts, events, endReason };
   }
 
@@ -149,7 +157,9 @@ export class DshClient {
     } catch {
       /* ignore */
     }
-    const r = await Promise.race([this.exited, new Promise((res) => setTimeout(() => res(null), 10000))]);
+    let timer;
+    const r = await Promise.race([this.exited, new Promise((res) => { timer = setTimeout(() => res(null), 10000); })]);
+    clearTimeout(timer);
     if (!r) this.child.kill();
     return r;
   }

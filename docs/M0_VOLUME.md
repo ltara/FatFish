@@ -27,12 +27,6 @@
 **超阈。** 完整引擎侧载解压约 710MB ≫ 150MB，压缩包约 113MB ≫ 80MB。  
 **先报不擅进 Setup。** M1 仅允许 AppData / `FATFISH_AGENT_ENGINE` 可选侧载；主包零增量。
 
-## Feature flag
+## 历史方案（已作废）
 
-`%AppData%\FatFish\config.json`：
-
-```json
-"agent_engine": { "enabled": false, "timeout_ms": 45000, "pinned_version": "0.2.1-rc.2" }
-```
-
-默认 `enabled: false`。设置页「本机助手引擎（试验）」可切换。
+M0/M1 的可选侧载开关已被 M2 固定运行时方案替代，M3-C 删除对应配置和 UI。当前以 ARCHITECTURE、ROADMAP 和 ELECTRON 为准，不再使用旧开关。

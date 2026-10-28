@@ -48,6 +48,7 @@ export class QQChannel extends EventEmitter {
     this.pending = new Map();
     this.state = "offline";
     this.closed = false;
+    this.reconnectTimer = null;
   }
 
   #setState(s) {
@@ -57,12 +58,15 @@ export class QQChannel extends EventEmitter {
   }
 
   start() {
+    clearTimeout(this.reconnectTimer);
     this.closed = false;
     this.#connect();
   }
 
   stop() {
     this.closed = true;
+    clearTimeout(this.reconnectTimer);
+    this.selfId = "";
     try {
       this.ws?.close();
     } catch {
@@ -93,7 +97,10 @@ export class QQChannel extends EventEmitter {
       for (const p of this.pending.values()) p.resolve(null);
       this.pending.clear();
       this.#setState("offline");
-      setTimeout(() => this.#connect(), RECONNECT_MS);
+      if (!this.closed) {
+        this.reconnectTimer = setTimeout(() => { this.reconnectTimer = null; this.#connect(); }, RECONNECT_MS);
+        this.reconnectTimer.unref?.();
+      }
     });
     ws.on("error", (e) => log("qq_ws_error", redact(e.message)));
   }
@@ -109,6 +116,11 @@ export class QQChannel extends EventEmitter {
       const p = this.pending.get(msg.echo);
       this.pending.delete(msg.echo);
       p.resolve(msg);
+      return;
+    }
+    // Pinned backend's heartbeat reports account state even while WS stays connected.
+    if (msg.post_type === "meta_event" && msg.meta_event_type === "heartbeat" && typeof msg.status?.online === "boolean") {
+      this.#setState(msg.status.online ? "online" : "offline");
       return;
     }
     if (msg.post_type !== "message" || msg.message_type !== "private") return;
@@ -130,6 +142,16 @@ export class QQChannel extends EventEmitter {
   }
 
   /** Send plain text as message segments (never CQ-code parsed). Resolves true when every chunk was accepted. */
+  async sendConfirmed(to, text) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || this.state !== "online" || !Number.isSafeInteger(Number(to)) || splitForQQ(text).length !== 1) return { state: "not_sent" };
+    try {
+      const r = await this.#call("send_private_msg", { user_id: Number(to), message: [{ type: "text", data: { text } }] });
+      if (!r) return { state: "unknown" }; // Sent frame, but no definitive receipt: never blindly resend.
+      if (r.status === "ok" && r.retcode === 0 && r.data?.message_id != null) return { state: "sent" };
+      return { state: r.status === "failed" ? "not_sent" : "unknown" };
+    } catch { return { state: "unknown" }; }
+  }
+
   async send(to, text) {
     let ok = true;
     for (const part of splitForQQ(text)) {

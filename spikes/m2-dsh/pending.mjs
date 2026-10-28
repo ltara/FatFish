@@ -3,7 +3,8 @@ import { DshClient } from "../../app/core/dsh-client.mjs";
 
 const c = new DshClient({
   exe: process.env.DSH_EXE,
-  profile: process.argv[2] || "fatfish",
+  profile: process.argv[2] || "fatfish-external",
+  args: process.argv.slice(3).flatMap((p) => ["--patch", p]),
   env: { ...process.env, DSH_HOME: process.env.SPIKE_HOME },
   cwd: process.env.SPIKE_HOME,
 });

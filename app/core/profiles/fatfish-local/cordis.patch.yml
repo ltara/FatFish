@@ -1,0 +1,48 @@
+# DSH owns permissions. The local answerer uses its pre-execute ask seam for each tool,
+# including workspace/temp actions that the default rc2 policy would otherwise allow.
+- id: sandbox-policy
+  config:
+    mode: workspace-write
+- id: approval
+  config:
+    policy: ask
+# Companion scope: keep shell/files/web fetch/skills/subagents and Core tools.
+# Remove coding orchestration, autonomous goals and model-visible job management.
+- id: plan-mode
+  disabled: true
+- id: tool-goal
+  disabled: true
+- id: goal-round-driver
+  disabled: true
+- id: command-goal
+  disabled: true
+- id: goal
+  disabled: true
+- id: tool-todo
+  disabled: true
+- id: tool-workflow
+  disabled: true
+- id: workflow-ptc
+  disabled: true
+- id: ptc-runtime
+  disabled: true
+- id: tool-jobs
+  disabled: true
+- id: tool-plugin-manager
+  disabled: true
+# v1 does not expose the provider-billed search API (architecture D-6).
+- id: tool-web
+  config:
+    search: false
+    fetch: true
+- id: web-search-deepseek
+  disabled: true
+- id: web-deepseek-api
+  disabled: true
+- insert:
+    - id: fatfish-memory
+      name: './plugins/fatfish-memory.mjs'
+    - id: fatfish-remind
+      name: './plugins/fatfish-remind.mjs'
+    - id: fatfish-approval
+      name: './plugins/fatfish-approval.mjs'

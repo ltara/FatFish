@@ -1,0 +1,15 @@
+{
+  "name": "fatfish-activation-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "check": "node --check src/worker.mjs && node --check scripts/generate-keys.mjs && node --check scripts/generate-codes.mjs && node --check scripts/admin.mjs && node --check scripts/local-check.mjs",
+    "dev": "wrangler dev --local --ip 127.0.0.1 --port 8791",
+    "schema:local": "wrangler d1 execute fatfish-activation --local --file schema.sql",
+    "test:local": "node scripts/local-check.mjs",
+    "test:client": "node scripts/local-check.mjs --client"
+  },
+  "devDependencies": { "wrangler": "4.152.0" }
+}
